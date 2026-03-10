@@ -180,6 +180,8 @@ export function analyzeTripQuality(
   return { valuePerKm, valuePerHour, valuePerMinute, netValue, fuelCost, signal, score };
 }
 
+// Substitua a função parseUberText no contexts/AppContext.tsx por esta versão:
+
 export function parseUberText(text: string): {
   grossValue: number;
   distanceKm: number;
@@ -188,46 +190,55 @@ export function parseUberText(text: string): {
 } | null {
   if (!text || text.length < 3) return null;
 
-  const moneyPatterns = [
-    /R\$\s*(\d+[.,]\d{1,2})/gi,
-    /(\d+[.,]\d{2})\s*reais/gi,
-    /valor[:\s]+R?\$?\s*(\d+[.,]\d{1,2})/gi,
-  ];
+  // ── 1. Valor ────────────────────────────────────────────────────────────
+  const moneyMatch = /R\$\s*(\d{1,4}[.,]\d{1,2})/i.exec(text);
+  const grossValue = moneyMatch
+    ? parseFloat(moneyMatch[1].replace(",", "."))
+    : null;
+  if (!grossValue || grossValue < 3 || grossValue > 2000) return null;
 
-  const distPatterns = [
-    /(\d+[.,]\d{1,2})\s*km/gi,
-    /(\d+)\s*km/gi,
-    /distância[:\s]+(\d+[.,]\d{1,2})/gi,
-  ];
+  // ── 2. Somar busca + corrida ─────────────────────────────────────────────
+  // Formato Uber: "4 min (1.2 km)" + "10 minutos (3.9 km)"
+  const timeDistPattern = /(\d+)\s*min(?:uto(?:s)?)?\s*\((\d+[.,]\d+|\d+)\s*km\)/gi;
+  const allMatches = [...text.matchAll(timeDistPattern)];
 
-  const timePatterns = [
-    /(\d+)\s*min/gi,
-    /(\d+)\s*minutos/gi,
-    /duração[:\s]+(\d+)/gi,
-  ];
+  let durationMinutes: number | null = null;
+  let distanceKm: number | null = null;
 
+  if (allMatches.length > 0) {
+    // Soma todos os pares encontrados (busca + corrida)
+    durationMinutes = allMatches.reduce((sum, m) => sum + (parseFloat(m[1]) || 0), 0);
+    distanceKm = allMatches.reduce(
+      (sum, m) => sum + (parseFloat(m[2].replace(",", ".")) || 0),
+      0
+    );
+  } else {
+    // Fallback: pegar primeiro min e primeiro km separados
+    const minMatch = /(\d+)\s*min/i.exec(text);
+    const kmMatch = /(\d+[.,]\d+|\d+)\s*km/i.exec(text);
+    durationMinutes = minMatch ? parseFloat(minMatch[1]) : null;
+    distanceKm = kmMatch ? parseFloat(kmMatch[1].replace(",", ".")) : null;
+  }
+
+  if (!durationMinutes || !distanceKm) return null;
+  if (durationMinutes <= 0 || distanceKm <= 0) return null;
+
+  // ── 3. Rating ────────────────────────────────────────────────────────────
+  // "★ 4,89 (261)" ou "4,89 ★" ou "4,89 (261)"
   const ratingPatterns = [
-    /(\d[.,]\d{1,2})\s*\*/gi,
-    /nota[:\s]+(\d[.,]\d{1,2})/gi,
-    /avaliação[:\s]+(\d[.,]\d{1,2})/gi,
+    /[★⭐*]\s*(\d[.,]\d{1,2})/,
+    /(\d[.,]\d{1,2})\s*[★⭐*]/,
+    /(\d[.,]\d{1,2})\s*\(\d+\)/,
+    /nota[:\s]+(\d[.,]\d{1,2})/i,
   ];
-
-  const findFirst = (pats: RegExp[]) => {
-    for (const p of pats) {
-      p.lastIndex = 0;
-      const m = p.exec(text);
-      if (m) return parseFloat(m[1].replace(",", "."));
+  let passengerRating = 0;
+  for (const p of ratingPatterns) {
+    const m = p.exec(text);
+    if (m) {
+      const v = parseFloat(m[1].replace(",", "."));
+      if (v >= 1 && v <= 5) { passengerRating = v; break; }
     }
-    return null;
-  };
-
-  const grossValue = findFirst(moneyPatterns);
-  const distanceKm = findFirst(distPatterns);
-  const durationMinutes = findFirst(timePatterns);
-  const passengerRating = findFirst(ratingPatterns) ?? 0;
-
-  if (!grossValue || !distanceKm || !durationMinutes) return null;
-  if (grossValue <= 0 || distanceKm <= 0 || durationMinutes <= 0) return null;
+  }
 
   return { grossValue, distanceKm, durationMinutes, passengerRating };
 }
