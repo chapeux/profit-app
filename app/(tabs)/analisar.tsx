@@ -24,7 +24,7 @@ import Reanimated, {
 import Colors from "@/constants/colors";
 import { analyzeTripQuality, parseUberText, useApp } from "@/contexts/AppContext";
 import { Semaphore } from "@/components/Semaphore";
-import { UberReader } from "@/modules/UberReader";
+import { TripReader } from "@/modules/TripReader";
 
 const useNative = Platform.OS !== "web";
 
@@ -201,192 +201,47 @@ function RealtimePopup({
   );
 }
 
-const popup = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: Colors.dark.bgCard,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 40,
-    borderTopWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  dragHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.dark.border,
-    alignSelf: "center",
-    marginBottom: 16,
-  },
-  badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    alignSelf: "flex-start",
-    backgroundColor: Colors.dark.accentMuted ?? "rgba(0,217,111,0.12)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    marginBottom: 16,
-  },
-  badgeText: {
-    color: Colors.accent,
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-  },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 16,
-  },
-  signalLabel: {
-    fontSize: 22,
-    fontFamily: "Inter_700Bold",
-  },
-  scoreText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    marginTop: 3,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.dark.border,
-    marginVertical: 14,
-  },
-  valuesGrid: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  valueCell: {
-    flex: 1,
-    alignItems: "center",
-  },
-  valueDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: Colors.dark.border,
-  },
-  valueBig: {
-    fontSize: 16,
-    fontFamily: "Inter_700Bold",
-  },
-  valueLabel: {
-    color: Colors.dark.textSecondary,
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    marginTop: 3,
-  },
-  detailRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  detailItem: { alignItems: "center" },
-  detailLabel: {
-    color: Colors.dark.textSecondary,
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    marginBottom: 2,
-  },
-  detailValue: {
-    color: Colors.dark.text,
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-  },
-  netRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: Colors.dark.bgElevated,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
-  },
-  netLabel: {
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-  },
-  netValue: {
-    fontSize: 20,
-    fontFamily: "Inter_700Bold",
-  },
-  dismissBtn: {
-    backgroundColor: Colors.dark.bgElevated,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  dismissText: {
-    color: Colors.dark.text,
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-  },
-});
-
-// ─── Accessibility status type ────────────────────────────────────────────────
-
-type A11yStatus =
-  | "unavailable"  // Expo Go / iOS / web — clipboard fallback
-  | "disabled"     // native build, service not yet enabled by user
-  | "enabled";     // native build, service running
-
-export default function AnalyzeScreen() {
+export default function AnalisarScreen() {
   const insets   = useSafeAreaInsets();
   const { settings } = useApp();
-  const C        = Colors.dark;
+  const C = Colors.dark;
 
-  // Manual form
-  const [grossValue,       setGrossValue]       = useState("");
-  const [distanceKm,       setDistanceKm]       = useState("");
-  const [durationMinutes,  setDurationMinutes]  = useState("");
-  const [passengerRating,  setPassengerRating]  = useState("");
+  // ─── Realtime state ───────────────────────────────────────────────────────
+  const [realtimeEnabled, setRealtimeEnabled] = useState(false);
+  const [a11yStatus, setA11yStatus]           = useState<"enabled" | "disabled" | "unavailable">(
+    TripReader.isAvailable() ? "disabled" : "unavailable"
+  );
+  const [clipFound, setClipFound]             = useState(false);
+  const [popupVisible, setPopupVisible]       = useState(false);
+  const [popupSource, setPopupSource]         = useState<"accessibility" | "clipboard">("clipboard");
+  const [realtimeData, setRealtimeData]       = useState<ReturnType<typeof analyzeTripQuality> | null>(null);
+  const [realtimeRaw, setRealtimeRaw]         = useState<{ gross: number; dist: number; dur: number; rating: number } | null>(null);
 
-  // Realtime state
-  const [realtimeEnabled, setRealtimeEnabled]   = useState(false);
-  const [popupVisible,    setPopupVisible]      = useState(false);
-  const [popupSource,     setPopupSource]       = useState<"accessibility" | "clipboard">("clipboard");
-  const [realtimeData,    setRealtimeData]      = useState<ReturnType<typeof analyzeTripQuality> | null>(null);
-  const [realtimeRaw,     setRealtimeRaw]       = useState<{
-    gross: number; dist: number; dur: number; rating: number;
-  } | null>(null);
-  const [a11yStatus,      setA11yStatus]        = useState<A11yStatus>("unavailable");
-  const [clipFound,       setClipFound]         = useState(false);
+  const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const unsubA11yRef  = useRef<(() => void) | null>(null);
+  const lastClipboardRef = useRef<string>("");
 
-  // Refs
-  const lastClipboardRef  = useRef("");
-  const intervalRef       = useRef<ReturnType<typeof setInterval> | null>(null);
-  const unsubA11yRef      = useRef<(() => void) | null>(null);
+  // ─── Manual form state ────────────────────────────────────────────────────
+  const [grossValue,      setGrossValue]      = useState("");
+  const [distanceKm,      setDistanceKm]      = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("");
+  const [passengerRating, setPassengerRating] = useState("");
 
-  // ─── Initialise a11y status once ───────────────────────────────────────────
-
+  // ─── Check a11y status on mount ───────────────────────────────────────────
   useEffect(() => {
-    if (!UberReader.isAvailable()) {
-      setA11yStatus("unavailable");
-      return;
-    }
-    UberReader.isAccessibilityEnabled().then((enabled) => {
+    if (!TripReader.isAvailable()) return;
+    TripReader.isAccessibilityEnabled().then((enabled) => {
       setA11yStatus(enabled ? "enabled" : "disabled");
     });
   }, []);
 
-  // Refresh a11y status when toggle is turned on (user may have just enabled it)
   const refreshA11yStatus = useCallback(async () => {
-    if (!UberReader.isAvailable()) return;
-    const enabled = await UberReader.isAccessibilityEnabled();
+    if (!TripReader.isAvailable()) return;
+    const enabled = await TripReader.isAccessibilityEnabled();
     setA11yStatus(enabled ? "enabled" : "disabled");
   }, []);
 
-  // ─── Trip detection handler (shared by both sources) ──────────────────────
-
+  // ─── Trip detection handler ───────────────────────────────────────────────
   const handleTripDetected = useCallback(
     (
       gross: number,
@@ -413,7 +268,6 @@ export default function AnalyzeScreen() {
   );
 
   // ─── Clipboard polling (fallback) ─────────────────────────────────────────
-
   const checkClipboard = useCallback(async () => {
     try {
       const text = await Clipboard.getStringAsync();
@@ -434,10 +288,8 @@ export default function AnalyzeScreen() {
     }
   }, [handleTripDetected]);
 
-  // ─── Start / stop realtime based on toggle + a11y status ──────────────────
-
+  // ─── Start / stop realtime ────────────────────────────────────────────────
   useEffect(() => {
-    // Clean up previous listeners
     if (intervalRef.current) clearInterval(intervalRef.current);
     unsubA11yRef.current?.();
     unsubA11yRef.current = null;
@@ -445,9 +297,8 @@ export default function AnalyzeScreen() {
     if (!realtimeEnabled) return;
 
     if (a11yStatus === "enabled") {
-      // Native accessibility path
-      UberReader.startListening();
-      unsubA11yRef.current = UberReader.addListener((trip) => {
+      TripReader.startListening();
+      unsubA11yRef.current = TripReader.addListener((trip) => {
         handleTripDetected(
           trip.grossValue,
           trip.distanceKm,
@@ -457,14 +308,13 @@ export default function AnalyzeScreen() {
         );
       });
     } else {
-      // Clipboard fallback (Expo Go, iOS, a11y disabled)
       intervalRef.current = setInterval(checkClipboard, 2000);
     }
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (a11yStatus === "enabled") {
-        UberReader.stopListening();
+        TripReader.stopListening();
         unsubA11yRef.current?.();
         unsubA11yRef.current = null;
       }
@@ -482,7 +332,6 @@ export default function AnalyzeScreen() {
   );
 
   // ─── Manual form ──────────────────────────────────────────────────────────
-
   const manualResult = React.useMemo(() => {
     const gross = parseFloat(grossValue.replace(",", ".")) || 0;
     const dist  = parseFloat(distanceKm.replace(",", ".")) || 0;
@@ -516,8 +365,7 @@ export default function AnalyzeScreen() {
     opacity: resultOpacity.value,
   }));
 
-  // ─── Helpers for toggle subtitle / status pill ────────────────────────────
-
+  // ─── Helpers ──────────────────────────────────────────────────────────────
   const realtimeSubtitle = (() => {
     if (!realtimeEnabled) {
       return a11yStatus === "enabled"
@@ -585,14 +433,13 @@ export default function AnalyzeScreen() {
               <Text style={styles.a11yTitle}>Serviço de Acessibilidade</Text>
             </View>
             <Text style={styles.a11yBody}>
-              Para leitura automática das ofertas do Uber, ative o serviço
+              Para leitura automática das ofertas, ative o serviço
               "Moto Ganhos" nas configurações de acessibilidade do Android.
-              O app lê apenas a tela do Uber Driver.
             </Text>
             <Pressable
               style={styles.a11yBtn}
               onPress={() => {
-                UberReader.openAccessibilitySettings();
+                TripReader.openAccessibilitySettings();
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               }}
             >
@@ -606,7 +453,7 @@ export default function AnalyzeScreen() {
           </View>
         )}
 
-        {/* ─── ACCESSIBILITY ENABLED STATUS ──────────────────────────── */}
+        {/* ─── ACCESSIBILITY ENABLED ──────────────────────────────────── */}
         {realtimeEnabled && a11yStatus === "enabled" && (
           <View style={styles.instructionCard}>
             <View style={[styles.statusPill, { backgroundColor: Colors.accent + "22" }]}>
@@ -622,7 +469,7 @@ export default function AnalyzeScreen() {
           </View>
         )}
 
-        {/* ─── CLIPBOARD FALLBACK INSTRUCTIONS ──────────────────────── */}
+        {/* ─── CLIPBOARD FALLBACK ─────────────────────────────────────── */}
         {realtimeEnabled && a11yStatus === "unavailable" && (
           <View style={styles.instructionCard}>
             <View style={styles.instructionRow}>
@@ -892,7 +739,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Accessibility enable card
+  // Accessibility card
   a11yCard: {
     backgroundColor: Colors.dark.bgCard,
     borderRadius: 16,
@@ -1128,5 +975,136 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     fontSize: 11,
     fontFamily: "Inter_400Regular",
+  },
+});
+
+const popup = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: Colors.dark.bgCard,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    paddingBottom: 40,
+    borderTopWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  dragHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.dark.border,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    alignSelf: "flex-start",
+    backgroundColor: Colors.dark.accentMuted ?? "rgba(0,217,111,0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginBottom: 16,
+  },
+  badgeText: {
+    color: Colors.accent,
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+  },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    marginBottom: 16,
+  },
+  signalLabel: {
+    fontSize: 22,
+    fontFamily: "Inter_700Bold",
+  },
+  scoreText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    marginTop: 3,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.dark.border,
+    marginVertical: 14,
+  },
+  valuesGrid: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  valueCell: {
+    flex: 1,
+    alignItems: "center",
+  },
+  valueDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: Colors.dark.border,
+  },
+  valueBig: {
+    fontSize: 16,
+    fontFamily: "Inter_700Bold",
+  },
+  valueLabel: {
+    color: Colors.dark.textSecondary,
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    marginTop: 3,
+  },
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  detailItem: { alignItems: "center" },
+  detailLabel: {
+    color: Colors.dark.textSecondary,
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+  },
+  detailValue: {
+    color: Colors.dark.text,
+    fontSize: 13,
+    fontFamily: "Inter_600SemiBold",
+    marginTop: 2,
+  },
+  netRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: Colors.dark.bgElevated,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  netLabel: {
+    color: Colors.dark.textSecondary,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+  },
+  netValue: {
+    fontSize: 18,
+    fontFamily: "Inter_700Bold",
+  },
+  dismissBtn: {
+    alignItems: "center",
+    paddingVertical: 14,
+    backgroundColor: Colors.dark.bgElevated,
+    borderRadius: 14,
+  },
+  dismissText: {
+    color: Colors.dark.text,
+    fontSize: 15,
+    fontFamily: "Inter_600SemiBold",
   },
 });
