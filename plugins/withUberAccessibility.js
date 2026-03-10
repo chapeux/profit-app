@@ -2,19 +2,13 @@
  * Expo Config Plugin — withUberAccessibility
  *
  * Applied automatically during `expo prebuild` (or `eas build`).
- * It performs three things:
+ * It performs five things:
  *
  *  1. Injects the BIND_ACCESSIBILITY_SERVICE permission into AndroidManifest.xml
- *  2. Declares UberReaderService in AndroidManifest.xml (with the required
- *     intent-filter and meta-data pointing to uber_reader_config.xml)
- *  3. Copies Kotlin source files from android-src/ into the generated
- *     android/app/src/main/java/com/motoganhos/ directory and copies
- *     uber_reader_config.xml into android/app/src/main/res/xml/
- *  4. Registers UberReaderPackage in MainApplication.kt so React Native
- *     can pick up the native module at runtime.
- *
- * Usage in app.json plugins array:
- *   "./plugins/withUberAccessibility"
+ *  2. Declares UberReaderService in AndroidManifest.xml
+ *  3. Copies Kotlin source files from android-src/ into the generated android/ directory
+ *  4. Copies uber_reader_config.xml into android/app/src/main/res/xml/
+ *  5. Registers UberReaderPackage in MainApplication.kt
  */
 
 const {
@@ -124,45 +118,94 @@ function withAccessibilityFiles(config) {
 
       // --- Copy XML config ---
       const xmlSrc = path.join(srcDir, "uber_reader_config.xml");
-      const xmlDst = path.join(xmlDir,  "uber_reader_config.xml");
+      const xmlDst = path.join(xmlDir, "uber_reader_config.xml");
       if (fs.existsSync(xmlSrc)) {
         fs.copyFileSync(xmlSrc, xmlDst);
         console.log("[withUberAccessibility] Copied uber_reader_config.xml → res/xml/");
       }
 
-      // --- Patch MainApplication.kt to register UberReaderPackage ---
-      const mainAppPath = path.join(javaDir, "MainApplication.kt");
-      if (fs.existsSync(mainAppPath)) {
+      // --- Patch MainApplication.kt ---
+      // FIX: MainApplication.kt lives at the root of the java package dir,
+      // NOT inside com/motoganhos/ — search both locations to be safe.
+      const possiblePaths = [
+        path.join(androidMain, "java", "com", "motoganhos", "MainApplication.kt"),
+        path.join(androidMain, "java", "host", "exp", "exponent", "MainApplication.kt"),
+      ];
+
+      // Also do a glob-style search as fallback
+      let mainAppPath = possiblePaths.find(fs.existsSync);
+
+      if (!mainAppPath) {
+        // Search recursively up to 4 levels deep
+        const javaRoot = path.join(androidMain, "java");
+        mainAppPath = findFile(javaRoot, "MainApplication.kt", 4);
+      }
+
+      if (mainAppPath && fs.existsSync(mainAppPath)) {
         let content = fs.readFileSync(mainAppPath, "utf8");
 
         if (!content.includes("UberReaderPackage")) {
-          // Insert import at the top of the package block
+          // Add import after the package declaration
           content = content.replace(
-            /^(package com\.motoganhos\s*\n)/m,
+            /^(package\s+[\w.]+\s*\n)/m,
             "$1\nimport com.motoganhos.UberReaderPackage\n"
           );
 
-          // Inject the package into getPackages()
-          // Pattern used by Expo-managed MainApplication.kt
-          content = content.replace(
-            /(val packages = PackageList\(this\)\.packages)/,
-            "$1\n      packages.add(UberReaderPackage())"
-          );
+          // Inject into getPackages() — handles Expo SDK 49, 50, 51, 52, 53, 54+
+          if (content.includes("PackageList(this).packages.apply")) {
+            // SDK 54+ pattern: PackageList(this).packages.apply { ... }
+            content = content.replace(
+              /(PackageList\(this\)\.packages\.apply\s*\{)/,
+              "$1\n              add(UberReaderPackage())"
+            );
+          } else if (content.includes("val packages = PackageList(this).packages")) {
+            content = content.replace(
+              /(val packages = PackageList\(this\)\.packages)/,
+              "$1\n      packages.add(UberReaderPackage())"
+            );
+          } else if (content.includes("val packages = PackageList(application).packages")) {
+            content = content.replace(
+              /(val packages = PackageList\(application\)\.packages)/,
+              "$1\n      packages.add(UberReaderPackage())"
+            );
+          } else {
+            // Generic fallback: inject inside getPackages body
+            content = content.replace(
+              /(override fun getPackages\(\)[^\{]*\{)/,
+              "$1\n          add(UberReaderPackage())"
+            );
+          }
 
           fs.writeFileSync(mainAppPath, content, "utf8");
-          console.log("[withUberAccessibility] Patched MainApplication.kt");
+          console.log(`[withUberAccessibility] Patched MainApplication.kt at ${mainAppPath}`);
         } else {
           console.log("[withUberAccessibility] MainApplication.kt already patched");
         }
       } else {
         console.warn(
-          "[withUberAccessibility] MainApplication.kt not found — run `expo prebuild` first"
+          "[withUberAccessibility] MainApplication.kt not found — will retry after prebuild completes"
         );
       }
 
       return cfg;
     },
   ]);
+}
+
+// ─── Helper: recursive file search ──────────────────────────────────────────
+
+function findFile(dir, filename, maxDepth) {
+  if (maxDepth <= 0 || !fs.existsSync(dir)) return null;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isFile() && entry.name === filename) return fullPath;
+    if (entry.isDirectory()) {
+      const found = findFile(fullPath, filename, maxDepth - 1);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 // ─── Export ──────────────────────────────────────────────────────────────────

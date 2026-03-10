@@ -1,8 +1,8 @@
 package com.motoganhos
 
 /**
- * Parses raw text extracted from the screen to detect trip offer details.
- * Supports multiple Uber Driver screen layouts and OCR text from screenshots.
+ * Parses raw text extracted from the Uber Driver screen
+ * to detect trip offer details: price, distance, duration, rating.
  */
 data class TripData(
     val grossValue: Double,
@@ -14,28 +14,23 @@ data class TripData(
 
 object UberTextParser {
 
-    // R$ 25,50 / R$25.50 / R$ 25 / 25,50 reais
+    // Matches "R$ 25,50" or "R$25.50"
     private val moneyPatterns = listOf(
-        Regex("""R\$\s*(\d{1,3}[,.]?\d{0,2})"""),
-        Regex("""(\d{1,3}[,.]\d{2})\s*(?:reais|BRL)"""),
-        // Uber às vezes mostra "25,50" sem o R$ na tela de oferta
-        Regex("""^(\d{1,3}[,.]\d{2})$""", setOf(RegexOption.MULTILINE)),
+        Regex("""R\$\s*(\d+[,.]?\d{0,2})"""),
+        Regex("""(\d+[,.]\d{2})\s*(?:reais|BRL)"""),
     )
 
-    // 8,5 km / 8.5 km / 10 km / 10,5km
+    // Matches "8,5 km" or "10 km"
     private val distancePatterns = listOf(
-        Regex("""(\d{1,3}[,.]\d{1,2})\s*km""", RegexOption.IGNORE_CASE),
+        Regex("""(\d+[,.]\d{1,2})\s*km""", RegexOption.IGNORE_CASE),
         Regex("""(\d{1,3})\s*km""", RegexOption.IGNORE_CASE),
     )
 
-    // 4,85 ★ / 4.9 * / nota: 4.9 / avaliação 4,9 / (4,9)
+    // Matches "4,85 ★" or "nota: 4.9"
     private val ratingPatterns = listOf(
         Regex("""(\d[,.]\d{1,2})\s*[⭐★*]"""),
         Regex("""[Nn]ota[:\s]+(\d[,.]\d{1,2})"""),
         Regex("""[Aa]valia[çc][aã]o[:\s]+(\d[,.]\d{1,2})"""),
-        Regex("""\((\d[,.]\d{1,2})\)"""),
-        // Rating isolado entre 4.0 e 5.0
-        Regex("""(?<!\d)(4[,.]\d{1,2}|5[,.]0)(?!\d)"""),
     )
 
     fun parse(text: String): TripData? {
@@ -45,19 +40,16 @@ object UberTextParser {
         val dist  = findFirst(text, distancePatterns) ?: return null
         val dur   = parseTime(text) ?: return null
 
-        // Sanity checks — valores fora do razoável para corridas Uber
-        if (money < 3.0 || money > 1000.0) return null
-        if (dist < 0.5 || dist > 500.0) return null
-        if (dur < 1.0 || dur > 600.0) return null
+        if (money <= 0.0 || dist <= 0.0 || dur <= 0.0) return null
 
         val rating = findFirst(text, ratingPatterns) ?: 0.0
 
         return TripData(
-            grossValue      = money,
-            distanceKm      = dist,
-            durationMinutes = dur,
-            passengerRating = rating,
-            rawText         = text.take(600)
+            grossValue       = money,
+            distanceKm       = dist,
+            durationMinutes  = dur,
+            passengerRating  = rating,
+            rawText          = text.take(600)
         )
     }
 
@@ -71,29 +63,20 @@ object UberTextParser {
     }
 
     private fun parseTime(text: String): Double? {
-        // "1 h 15 min" ou "1h15" ou "1 hora 15 minutos"
-        val hoursMin = Regex("""(\d+)\s*h(?:ora(?:s)?)?\s*(\d+)\s*min""", RegexOption.IGNORE_CASE)
+        // "1 h 15 min" or "1h15min"
+        val hoursMin = Regex("""(\d+)\s*h(?:oras?)?\s*(\d+)\s*min""", RegexOption.IGNORE_CASE)
         hoursMin.find(text)?.let { m ->
             val h   = m.groupValues[1].toDoubleOrNull() ?: 0.0
             val min = m.groupValues[2].toDoubleOrNull() ?: 0.0
             val total = h * 60.0 + min
             if (total > 0.0) return total
         }
-
-        // Só horas: "2 h" ou "2h"
-        val hoursOnly = Regex("""(\d+)\s*h(?:ora(?:s)?)?(?!\s*\d)""", RegexOption.IGNORE_CASE)
-        hoursOnly.find(text)?.let { m ->
-            val h = m.groupValues[1].toDoubleOrNull() ?: return@let
-            if (h > 0.0) return h * 60.0
-        }
-
-        // "25 min" ou "25 minutos" ou "25min"
-        val minOnly = Regex("""(\d+)\s*min(?:uto(?:s)?)?""", RegexOption.IGNORE_CASE)
+        // "25 min" or "25 minutos"
+        val minOnly = Regex("""(\d+)\s*min(?:utos?)?""", RegexOption.IGNORE_CASE)
         minOnly.find(text)?.let { m ->
             val v = m.groupValues[1].toDoubleOrNull() ?: return null
             if (v > 0.0) return v
         }
-
         return null
     }
 }

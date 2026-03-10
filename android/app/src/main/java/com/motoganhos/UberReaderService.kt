@@ -6,36 +6,25 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
 /**
- * Accessibility Service that monitors the screen for trip offer data.
- * Monitors Uber Driver and also gallery/image viewer apps for testing.
+ * Android Accessibility Service that monitors the Uber Driver app screen.
+ * Extracts trip offer details and forwards them to the React Native layer
+ * via UberReaderModule.
+ *
+ * This service must be declared in AndroidManifest.xml and the user must
+ * manually enable it in device Settings > Accessibility.
  */
 class UberReaderService : AccessibilityService() {
 
     companion object {
+        /** True while the OS has this service connected. */
         @Volatile var isRunning: Boolean = false
+
+        /** Callback set by UberReaderModule to receive parsed trip data. */
         var onTripDetected: ((TripData) -> Unit)? = null
 
         private var lastParsedText: String = ""
         private var lastEventMillis: Long   = 0L
         private const val DEBOUNCE_MS       = 800L
-
-        // Pacotes monitorados — Uber Driver + apps de galeria/imagem para testes
-        val MONITORED_PACKAGES = arrayOf(
-            "com.ubercab.driver",
-            "com.ubercab",
-            // Galeria Samsung
-            "com.sec.android.gallery3d",
-            // Galeria Google
-            "com.google.android.apps.photos",
-            // Galeria padrão Android
-            "com.android.gallery3d",
-            // Visualizador de imagens comum
-            "com.mi.android.globalFileexplorer",
-            // Google Drive (para abrir prints)
-            "com.google.android.apps.docs",
-            // Qualquer leitor de PDF/imagem
-            "com.adobe.reader",
-        )
     }
 
     override fun onServiceConnected() {
@@ -45,15 +34,17 @@ class UberReaderService : AccessibilityService() {
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
                          AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-            feedbackType        = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags               = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-                                  AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            feedbackType     = AccessibilityServiceInfo.FEEDBACK_GENERIC
+            flags            = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                               AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
             notificationTimeout = 100
-            packageNames        = MONITORED_PACKAGES
+            // Only monitor Uber Driver packages
+            packageNames = arrayOf("com.ubercab.driver", "com.ubercab", "com.ubercab.eats")
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // Debounce rapid events
         val now = System.currentTimeMillis()
         if (now - lastEventMillis < DEBOUNCE_MS) return
         lastEventMillis = now
@@ -97,7 +88,7 @@ class UberReaderService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        isRunning      = false
+        isRunning     = false
         lastParsedText = ""
     }
 }

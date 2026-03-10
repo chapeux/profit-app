@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Accessibility Service configuration for UberReaderService.
-  Placed at: android/app/src/main/res/xml/uber_reader_config.xml
+  Placed at:  android/app/src/main/res/xml/uber_reader_config.xml
+  by the config plugin (plugins/withUberAccessibility.js).
 
-  packageNames removido do XML — o filtro de pacotes é feito dinamicamente
-  em UberReaderService.kt via serviceInfo.packageNames, o que permite
-  monitorar a galeria para testes sem alterar o XML.
-
-  canRetrieveWindowContent = true → permite ler o texto visível na tela
+  canRetrieveWindowContent = true   → allows reading on-screen text
+  packageNames              = scope to Uber Driver only for privacy
 -->
 <accessibility-service
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -15,4 +13,5 @@
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault"
     android:canRetrieveWindowContent="true"
-    android:notificationTimeout="100" />
+    android:notificationTimeout="100"
+    android:packageNames="com.ubercab.driver,com.ubercab" />
