@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Alert,
   Modal,
   Platform,
   Pressable,
@@ -32,15 +33,7 @@ function formatCurrency(v: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function InfoRow({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string;
-  color?: string;
-}) {
+function InfoRow({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
@@ -70,14 +63,7 @@ interface RealtimePopupProps {
   onDismiss: () => void;
 }
 
-function RealtimePopup({
-  visible,
-  data,
-  rawValues,
-  settings,
-  source,
-  onDismiss,
-}: RealtimePopupProps) {
+function RealtimePopup({ visible, data, rawValues, settings, source, onDismiss }: RealtimePopupProps) {
   const translateY = useRef(new Animated.Value(300)).current;
   const opacity    = useRef(new Animated.Value(0)).current;
 
@@ -113,18 +99,14 @@ function RealtimePopup({
               color={Colors.accent}
             />
             <Text style={popup.badgeText}>
-              {source === "accessibility"
-                ? "Leitura via Acessibilidade"
-                : "Leitura via Clipboard"}
+              {source === "accessibility" ? "Leitura via Acessibilidade" : "Leitura via Clipboard"}
             </Text>
           </View>
 
           <View style={popup.topRow}>
             <Semaphore signal={data.signal} size={36} />
             <View style={{ flex: 1 }}>
-              <Text style={[popup.signalLabel, { color: sigColor }]}>
-                {SIGNAL_LABELS[data.signal]}
-              </Text>
+              <Text style={[popup.signalLabel, { color: sigColor }]}>{SIGNAL_LABELS[data.signal]}</Text>
               <Text style={popup.scoreText}>Score: {data.score}/100</Text>
             </View>
           </View>
@@ -133,23 +115,17 @@ function RealtimePopup({
 
           <View style={popup.valuesGrid}>
             <View style={popup.valueCell}>
-              <Text style={[popup.valueBig, { color: sigColor }]}>
-                {formatCurrency(data.valuePerKm)}
-              </Text>
+              <Text style={[popup.valueBig, { color: sigColor }]}>{formatCurrency(data.valuePerKm)}</Text>
               <Text style={popup.valueLabel}>por km</Text>
             </View>
             <View style={popup.valueDivider} />
             <View style={popup.valueCell}>
-              <Text style={[popup.valueBig, { color: sigColor }]}>
-                {formatCurrency(data.valuePerHour)}
-              </Text>
+              <Text style={[popup.valueBig, { color: sigColor }]}>{formatCurrency(data.valuePerHour)}</Text>
               <Text style={popup.valueLabel}>por hora</Text>
             </View>
             <View style={popup.valueDivider} />
             <View style={popup.valueCell}>
-              <Text style={[popup.valueBig, { color: sigColor }]}>
-                {formatCurrency(data.valuePerMinute)}
-              </Text>
+              <Text style={[popup.valueBig, { color: sigColor }]}>{formatCurrency(data.valuePerMinute)}</Text>
               <Text style={popup.valueLabel}>por min</Text>
             </View>
           </View>
@@ -182,12 +158,7 @@ function RealtimePopup({
 
           <View style={popup.netRow}>
             <Text style={popup.netLabel}>Lucro líquido estimado</Text>
-            <Text
-              style={[
-                popup.netValue,
-                { color: data.netValue >= 0 ? Colors.accent : Colors.danger },
-              ]}
-            >
+            <Text style={[popup.netValue, { color: data.netValue >= 0 ? Colors.accent : Colors.danger }]}>
               {formatCurrency(data.netValue)}
             </Text>
           </View>
@@ -202,32 +173,30 @@ function RealtimePopup({
 }
 
 export default function AnalisarScreen() {
-  const insets   = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
   const { settings } = useApp();
   const C = Colors.dark;
 
-  // ─── Realtime state ───────────────────────────────────────────────────────
   const [realtimeEnabled, setRealtimeEnabled] = useState(false);
-  const [a11yStatus, setA11yStatus]           = useState<"enabled" | "disabled" | "unavailable">(
+  const [a11yStatus, setA11yStatus] = useState<"enabled" | "disabled" | "unavailable">(
     TripReader.isAvailable() ? "disabled" : "unavailable"
   );
-  const [clipFound, setClipFound]             = useState(false);
-  const [popupVisible, setPopupVisible]       = useState(false);
-  const [popupSource, setPopupSource]         = useState<"accessibility" | "clipboard">("clipboard");
-  const [realtimeData, setRealtimeData]       = useState<ReturnType<typeof analyzeTripQuality> | null>(null);
-  const [realtimeRaw, setRealtimeRaw]         = useState<{ gross: number; dist: number; dur: number; rating: number } | null>(null);
+  const [clipFound, setClipFound]       = useState(false);
+  const [popupVisible, setPopupVisible] = useState(false);
+  const [popupSource, setPopupSource]   = useState<"accessibility" | "clipboard">("clipboard");
+  const [realtimeData, setRealtimeData] = useState<ReturnType<typeof analyzeTripQuality> | null>(null);
+  const [realtimeRaw, setRealtimeRaw]   = useState<{ gross: number; dist: number; dur: number; rating: number } | null>(null);
+  const [testText, setTestText]         = useState("");
 
-  const intervalRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const unsubA11yRef  = useRef<(() => void) | null>(null);
+  const intervalRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+  const unsubA11yRef     = useRef<(() => void) | null>(null);
   const lastClipboardRef = useRef<string>("");
 
-  // ─── Manual form state ────────────────────────────────────────────────────
   const [grossValue,      setGrossValue]      = useState("");
   const [distanceKm,      setDistanceKm]      = useState("");
   const [durationMinutes, setDurationMinutes] = useState("");
   const [passengerRating, setPassengerRating] = useState("");
 
-  // ─── Check a11y status on mount ───────────────────────────────────────────
   useEffect(() => {
     if (!TripReader.isAvailable()) return;
     TripReader.isAccessibilityEnabled().then((enabled) => {
@@ -241,15 +210,8 @@ export default function AnalisarScreen() {
     setA11yStatus(enabled ? "enabled" : "disabled");
   }, []);
 
-  // ─── Trip detection handler ───────────────────────────────────────────────
   const handleTripDetected = useCallback(
-    (
-      gross: number,
-      dist: number,
-      dur: number,
-      rating: number,
-      src: "accessibility" | "clipboard"
-    ) => {
+    (gross: number, dist: number, dur: number, rating: number, src: "accessibility" | "clipboard") => {
       const analysis = analyzeTripQuality(gross, dist, dur, settings);
       setRealtimeData(analysis);
       setRealtimeRaw({ gross, dist, dur, rating });
@@ -267,7 +229,6 @@ export default function AnalisarScreen() {
     [settings]
   );
 
-  // ─── Clipboard polling (fallback) ─────────────────────────────────────────
   const checkClipboard = useCallback(async () => {
     try {
       const text = await Clipboard.getStringAsync();
@@ -276,19 +237,12 @@ export default function AnalisarScreen() {
       const parsed = parseUberText(text);
       if (!parsed) return;
       setClipFound(true);
-      handleTripDetected(
-        parsed.grossValue,
-        parsed.distanceKm,
-        parsed.durationMinutes,
-        parsed.passengerRating,
-        "clipboard"
-      );
+      handleTripDetected(parsed.grossValue, parsed.distanceKm, parsed.durationMinutes, parsed.passengerRating, "clipboard");
     } catch {
       // Clipboard unavailable
     }
   }, [handleTripDetected]);
 
-  // ─── Start / stop realtime ────────────────────────────────────────────────
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     unsubA11yRef.current?.();
@@ -299,13 +253,7 @@ export default function AnalisarScreen() {
     if (a11yStatus === "enabled") {
       TripReader.startListening();
       unsubA11yRef.current = TripReader.addListener((trip) => {
-        handleTripDetected(
-          trip.grossValue,
-          trip.distanceKm,
-          trip.durationMinutes,
-          trip.passengerRating,
-          "accessibility"
-        );
+        handleTripDetected(trip.grossValue, trip.distanceKm, trip.durationMinutes, trip.passengerRating, "accessibility");
       });
     } else {
       intervalRef.current = setInterval(checkClipboard, 2000);
@@ -321,17 +269,27 @@ export default function AnalisarScreen() {
     };
   }, [realtimeEnabled, a11yStatus, checkClipboard, handleTripDetected]);
 
-  const toggleRealtime = useCallback(
-    async (val: boolean) => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      if (val) await refreshA11yStatus();
-      setClipFound(false);
-      setRealtimeEnabled(val);
-    },
-    [refreshA11yStatus]
-  );
+  const toggleRealtime = useCallback(async (val: boolean) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (val) await refreshA11yStatus();
+    setClipFound(false);
+    setRealtimeEnabled(val);
+  }, [refreshA11yStatus]);
 
-  // ─── Manual form ──────────────────────────────────────────────────────────
+  const handleTestParser = useCallback(() => {
+    if (!testText.trim()) return;
+    const parsed = parseUberText(testText);
+    if (parsed) {
+      handleTripDetected(parsed.grossValue, parsed.distanceKm, parsed.durationMinutes, parsed.passengerRating, "clipboard");
+    } else {
+      Alert.alert(
+        "Parser não reconheceu",
+        "Verifique se o texto contém:\n• Valor: R$ 8,71\n• Tempo+km: 4 min (1.2 km)\n• Tempo+km: 10 minutos (3.9 km)",
+        [{ text: "OK" }]
+      );
+    }
+  }, [testText, handleTripDetected]);
+
   const manualResult = React.useMemo(() => {
     const gross = parseFloat(grossValue.replace(",", ".")) || 0;
     const dist  = parseFloat(distanceKm.replace(",", ".")) || 0;
@@ -365,7 +323,6 @@ export default function AnalisarScreen() {
     opacity: resultOpacity.value,
   }));
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
   const realtimeSubtitle = (() => {
     if (!realtimeEnabled) {
       return a11yStatus === "enabled"
@@ -390,10 +347,7 @@ export default function AnalisarScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          {
-            paddingTop:    topInset + 16,
-            paddingBottom: Platform.OS === "web" ? 34 + 84 : 100,
-          },
+          { paddingTop: topInset + 16, paddingBottom: Platform.OS === "web" ? 34 + 84 : 100 },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -412,9 +366,7 @@ export default function AnalisarScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.realtimeTitle}>Analisar em tempo real</Text>
-              <Text style={styles.realtimeSub} numberOfLines={1}>
-                {realtimeSubtitle}
-              </Text>
+              <Text style={styles.realtimeSub} numberOfLines={1}>{realtimeSubtitle}</Text>
             </View>
           </View>
           <Switch
@@ -474,30 +426,45 @@ export default function AnalisarScreen() {
           <View style={styles.instructionCard}>
             <View style={styles.instructionRow}>
               <View style={styles.stepBadge}><Text style={styles.stepNum}>1</Text></View>
-              <Text style={styles.instructionText}>
-                Abra o app do Uber e veja uma oferta de corrida
-              </Text>
+              <Text style={styles.instructionText}>Abra o app do Uber e veja uma oferta de corrida</Text>
             </View>
             <View style={styles.instructionRow}>
               <View style={styles.stepBadge}><Text style={styles.stepNum}>2</Text></View>
-              <Text style={styles.instructionText}>
-                Selecione e copie o texto com os detalhes (valor, km, tempo)
-              </Text>
+              <Text style={styles.instructionText}>Selecione e copie o texto com os detalhes (valor, km, tempo)</Text>
             </View>
             <View style={styles.instructionRow}>
               <View style={styles.stepBadge}><Text style={styles.stepNum}>3</Text></View>
-              <Text style={styles.instructionText}>
-                Volte aqui — o semáforo aparece automaticamente!
-              </Text>
+              <Text style={styles.instructionText}>Volte aqui — o semáforo aparece automaticamente!</Text>
             </View>
             <View style={[styles.statusPill, { backgroundColor: Colors.accent + "22" }]}>
               <View style={[styles.statusDot, { backgroundColor: clipFound ? Colors.accent : Colors.warning }]} />
               <Text style={[styles.statusText, { color: clipFound ? Colors.accent : Colors.warning }]}>
-                {clipFound
-                  ? "Ultima leitura bem-sucedida"
-                  : "Monitorando area de transferencia..."}
+                {clipFound ? "Ultima leitura bem-sucedida" : "Monitorando area de transferencia..."}
               </Text>
             </View>
+          </View>
+        )}
+
+        {/* ─── TESTE DE PARSER ────────────────────────────────────────── */}
+        {realtimeEnabled && (
+          <View style={styles.testCard}>
+            <View style={styles.testHeader}>
+              <Ionicons name="flask-outline" size={16} color={Colors.warning} />
+              <Text style={styles.testTitle}>Testar parser</Text>
+            </View>
+            <TextInput
+              style={styles.testInput}
+              value={testText}
+              onChangeText={setTestText}
+              placeholder={"Cole aqui o texto da oferta...\nEx:\nR$ 8,71\n★ 4,89 (261)\n4 min (1.2 km)\n10 minutos (3.9 km)"}
+              placeholderTextColor={C.textMuted}
+              multiline
+              numberOfLines={5}
+            />
+            <Pressable style={styles.testBtn} onPress={handleTestParser}>
+              <Ionicons name="play" size={14} color={Colors.dark.bg} />
+              <Text style={styles.testBtnText}>Testar agora</Text>
+            </Pressable>
           </View>
         )}
 
@@ -604,35 +571,17 @@ export default function AnalisarScreen() {
             <InfoRow
               label="Valor por KM"
               value={formatCurrency(manualResult.valuePerKm) + "/km"}
-              color={
-                manualResult.valuePerKm >= settings.minGoodValuePerKm
-                  ? Colors.accent
-                  : manualResult.valuePerKm >= settings.minGoodValuePerKm * 0.6
-                  ? Colors.warning
-                  : Colors.danger
-              }
+              color={manualResult.valuePerKm >= settings.minGoodValuePerKm ? Colors.accent : manualResult.valuePerKm >= settings.minGoodValuePerKm * 0.6 ? Colors.warning : Colors.danger}
             />
             <InfoRow
               label="Valor por hora"
               value={formatCurrency(manualResult.valuePerHour) + "/h"}
-              color={
-                manualResult.valuePerHour >= settings.minGoodValuePerHour
-                  ? Colors.accent
-                  : manualResult.valuePerHour >= settings.minGoodValuePerHour * 0.6
-                  ? Colors.warning
-                  : Colors.danger
-              }
+              color={manualResult.valuePerHour >= settings.minGoodValuePerHour ? Colors.accent : manualResult.valuePerHour >= settings.minGoodValuePerHour * 0.6 ? Colors.warning : Colors.danger}
             />
             <InfoRow
               label="Valor por minuto"
               value={formatCurrency(manualResult.valuePerMinute) + "/min"}
-              color={
-                manualResult.valuePerMinute >= settings.minGoodValuePerMinute
-                  ? Colors.accent
-                  : manualResult.valuePerMinute >= settings.minGoodValuePerMinute * 0.6
-                  ? Colors.warning
-                  : Colors.danger
-              }
+              color={manualResult.valuePerMinute >= settings.minGoodValuePerMinute ? Colors.accent : manualResult.valuePerMinute >= settings.minGoodValuePerMinute * 0.6 ? Colors.warning : Colors.danger}
             />
             <InfoRow
               label="Lucro líquido"
@@ -645,21 +594,15 @@ export default function AnalisarScreen() {
             <View style={styles.thresholdsRow}>
               <View style={styles.threshold}>
                 <Ionicons name="checkmark-circle" size={13} color={Colors.accent} />
-                <Text style={styles.thresholdText}>
-                  Min KM: {formatCurrency(settings.minGoodValuePerKm)}
-                </Text>
+                <Text style={styles.thresholdText}>Min KM: {formatCurrency(settings.minGoodValuePerKm)}</Text>
               </View>
               <View style={styles.threshold}>
                 <Ionicons name="checkmark-circle" size={13} color={Colors.accent} />
-                <Text style={styles.thresholdText}>
-                  Min/h: {formatCurrency(settings.minGoodValuePerHour)}
-                </Text>
+                <Text style={styles.thresholdText}>Min/h: {formatCurrency(settings.minGoodValuePerHour)}</Text>
               </View>
               <View style={styles.threshold}>
                 <Ionicons name="checkmark-circle" size={13} color={Colors.accent} />
-                <Text style={styles.thresholdText}>
-                  Min/min: {formatCurrency(settings.minGoodValuePerMinute)}
-                </Text>
+                <Text style={styles.thresholdText}>Min/min: {formatCurrency(settings.minGoodValuePerMinute)}</Text>
               </View>
             </View>
           </Reanimated.View>
@@ -693,8 +636,6 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     marginBottom: 16,
   },
-
-  // Realtime toggle card
   realtimeCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -706,405 +647,141 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.dark.border,
   },
-  realtimeCardActive: {
-    borderColor: Colors.accent + "55",
-  },
-  realtimeLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-    marginRight: 12,
-  },
+  realtimeCardActive: { borderColor: Colors.accent + "55" },
+  realtimeLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1, marginRight: 12 },
   realtimeIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: Colors.dark.bgElevated,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center", justifyContent: "center",
   },
-  realtimeIconActive: {
-    backgroundColor: Colors.accent,
-  },
-  realtimeTitle: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-    color: Colors.dark.text,
-  },
-  realtimeSub: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: Colors.dark.textSecondary,
-    marginTop: 2,
-  },
-
-  // Accessibility card
+  realtimeIconActive: { backgroundColor: Colors.accent },
+  realtimeTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: Colors.dark.text },
+  realtimeSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: Colors.dark.textSecondary, marginTop: 2 },
   a11yCard: {
     backgroundColor: Colors.dark.bgCard,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.accent + "33",
-    gap: 12,
+    borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.accent + "33", gap: 12,
   },
-  a11yHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  a11yTitle: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-    color: Colors.dark.text,
-  },
-  a11yBody: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: Colors.dark.textSecondary,
-    lineHeight: 20,
-  },
+  a11yHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  a11yTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: Colors.dark.text },
+  a11yBody: { fontSize: 13, fontFamily: "Inter_400Regular", color: Colors.dark.textSecondary, lineHeight: 20 },
   a11yBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: Colors.accent,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, backgroundColor: Colors.accent, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16,
   },
-  a11yBtnText: {
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
-    color: Colors.dark.bg,
-  },
-  a11yRefreshBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-  },
-  a11yRefreshText: {
-    fontSize: 13,
-    fontFamily: "Inter_500Medium",
-    color: Colors.accent,
-  },
-  a11yHint: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: Colors.dark.textSecondary,
-    lineHeight: 20,
-    marginTop: 4,
-  },
-
-  // Instruction card (clipboard mode)
+  a11yBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: Colors.dark.bg },
+  a11yRefreshBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  a11yRefreshText: { fontSize: 13, fontFamily: "Inter_500Medium", color: Colors.accent },
+  a11yHint: { fontSize: 13, fontFamily: "Inter_400Regular", color: Colors.dark.textSecondary, lineHeight: 20, marginTop: 4 },
   instructionCard: {
     backgroundColor: Colors.dark.bgCard,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    gap: 12,
+    borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.dark.border, gap: 12,
   },
-  instructionRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
+  instructionRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   stepBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 24, height: 24, borderRadius: 12,
     backgroundColor: Colors.accent + "22",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
+    alignItems: "center", justifyContent: "center", marginTop: 1,
   },
-  stepNum: {
-    color: Colors.accent,
-    fontSize: 12,
-    fontFamily: "Inter_700Bold",
-  },
-  instructionText: {
-    flex: 1,
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 20,
-  },
-
-  // Status pill
-  statusPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  statusText: {
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-  },
-
-  // Divider
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginVertical: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.dark.border,
-  },
-  dividerText: {
-    color: Colors.dark.textMuted,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-  },
-
-  // Input form
-  inputGroup: { gap: 10, marginBottom: 20 },
-  inputRow:   { flexDirection: "row", gap: 10 },
-  inputLabel: {
-    fontSize: 12,
-    fontFamily: "Inter_500Medium",
-    color: Colors.dark.textSecondary,
-    marginBottom: 6,
-  },
-  inputField: {
-    flexDirection: "row",
-    alignItems: "center",
+  stepNum: { color: Colors.accent, fontSize: 12, fontFamily: "Inter_700Bold" },
+  instructionText: { flex: 1, color: Colors.dark.textSecondary, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 },
+  statusDot: { width: 7, height: 7, borderRadius: 3.5 },
+  statusText: { fontSize: 12, fontFamily: "Inter_500Medium" },
+  testCard: {
     backgroundColor: Colors.dark.bgCard,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
+    borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.warning + "44", gap: 10,
   },
-  input: {
-    flex: 1,
+  testHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  testTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: Colors.warning },
+  testInput: {
     color: Colors.dark.text,
-    fontSize: 15,
-    fontFamily: "Inter_500Medium",
+    fontSize: 13, fontFamily: "Inter_400Regular",
+    backgroundColor: Colors.dark.bgElevated,
+    borderRadius: 10, padding: 12,
+    minHeight: 110, textAlignVertical: "top",
   },
-
-  // Result card
+  testBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 6, backgroundColor: Colors.warning, borderRadius: 12, paddingVertical: 10,
+  },
+  testBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: Colors.dark.bg },
+  divider: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: 20 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.dark.border },
+  dividerText: { color: Colors.dark.textMuted, fontSize: 12, fontFamily: "Inter_400Regular" },
+  inputGroup: { gap: 10, marginBottom: 20 },
+  inputRow: { flexDirection: "row", gap: 10 },
+  inputLabel: { fontSize: 12, fontFamily: "Inter_500Medium", color: Colors.dark.textSecondary, marginBottom: 6 },
+  inputField: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: Colors.dark.bgCard,
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.dark.border,
+    paddingHorizontal: 12, paddingVertical: 10, gap: 8,
+  },
+  input: { flex: 1, color: Colors.dark.text, fontSize: 15, fontFamily: "Inter_500Medium" },
   resultCard: {
     backgroundColor: Colors.dark.bgCard,
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    marginBottom: 24,
+    borderRadius: 20, padding: 20,
+    borderWidth: 1, borderColor: Colors.dark.border, marginBottom: 24,
   },
-  resultTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    marginBottom: 12,
-  },
-  resultInfo:  { flex: 1 },
-  signalLabel: {
-    fontSize: 20,
-    fontFamily: "Inter_700Bold",
-  },
-  signalScore: {
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    marginTop: 2,
-  },
+  resultTop: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 12 },
+  resultInfo: { flex: 1 },
+  signalLabel: { fontSize: 20, fontFamily: "Inter_700Bold" },
+  signalScore: { color: Colors.dark.textSecondary, fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
   ratingBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: Colors.warning + "22",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: Colors.warning + "22", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
   },
-  ratingText: {
-    color: Colors.warning,
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-  },
-  rowDivider: {
-    height: 1,
-    backgroundColor: Colors.dark.border,
-    marginVertical: 12,
-  },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 4,
-  },
-  infoLabel: {
-    color: Colors.dark.textSecondary,
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-  },
-  infoValue: {
-    color: Colors.dark.text,
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-  },
-  thresholdsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  threshold: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  thresholdText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-  },
+  ratingText: { color: Colors.warning, fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  rowDivider: { height: 1, backgroundColor: Colors.dark.border, marginVertical: 12 },
+  infoRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
+  infoLabel: { color: Colors.dark.textSecondary, fontSize: 14, fontFamily: "Inter_400Regular" },
+  infoValue: { color: Colors.dark.text, fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  thresholdsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  threshold: { flexDirection: "row", alignItems: "center", gap: 4 },
+  thresholdText: { color: Colors.dark.textSecondary, fontSize: 11, fontFamily: "Inter_400Regular" },
 });
 
 const popup = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "flex-end",
-  },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: Colors.dark.bgCard,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 40,
-    borderTopWidth: 1,
-    borderColor: Colors.dark.border,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 24, paddingBottom: 40,
+    borderTopWidth: 1, borderColor: Colors.dark.border,
   },
   dragHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.dark.border,
-    alignSelf: "center",
-    marginBottom: 16,
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: Colors.dark.border, alignSelf: "center", marginBottom: 16,
   },
   badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
+    flexDirection: "row", alignItems: "center", gap: 5,
     alignSelf: "flex-start",
     backgroundColor: Colors.dark.accentMuted ?? "rgba(0,217,111,0.12)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    marginBottom: 16,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginBottom: 16,
   },
-  badgeText: {
-    color: Colors.accent,
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-  },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 16,
-  },
-  signalLabel: {
-    fontSize: 22,
-    fontFamily: "Inter_700Bold",
-  },
-  scoreText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    marginTop: 3,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.dark.border,
-    marginVertical: 14,
-  },
-  valuesGrid: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  valueCell: {
-    flex: 1,
-    alignItems: "center",
-  },
-  valueDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: Colors.dark.border,
-  },
-  valueBig: {
-    fontSize: 16,
-    fontFamily: "Inter_700Bold",
-  },
-  valueLabel: {
-    color: Colors.dark.textSecondary,
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    marginTop: 3,
-  },
-  detailRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
+  badgeText: { color: Colors.accent, fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  topRow: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 16 },
+  signalLabel: { fontSize: 22, fontFamily: "Inter_700Bold" },
+  scoreText: { color: Colors.dark.textSecondary, fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 3 },
+  divider: { height: 1, backgroundColor: Colors.dark.border, marginVertical: 14 },
+  valuesGrid: { flexDirection: "row", alignItems: "center" },
+  valueCell: { flex: 1, alignItems: "center" },
+  valueDivider: { width: 1, height: 40, backgroundColor: Colors.dark.border },
+  valueBig: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  valueLabel: { color: Colors.dark.textSecondary, fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 3 },
+  detailRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
   detailItem: { alignItems: "center" },
-  detailLabel: {
-    color: Colors.dark.textSecondary,
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-  },
-  detailValue: {
-    color: Colors.dark.text,
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
-    marginTop: 2,
-  },
+  detailLabel: { color: Colors.dark.textSecondary, fontSize: 11, fontFamily: "Inter_400Regular" },
+  detailValue: { color: Colors.dark.text, fontSize: 13, fontFamily: "Inter_600SemiBold", marginTop: 2 },
   netRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: Colors.dark.bgElevated,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 16,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    backgroundColor: Colors.dark.bgElevated, borderRadius: 12, padding: 14, marginBottom: 16,
   },
-  netLabel: {
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-  },
-  netValue: {
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
-  },
-  dismissBtn: {
-    alignItems: "center",
-    paddingVertical: 14,
-    backgroundColor: Colors.dark.bgElevated,
-    borderRadius: 14,
-  },
-  dismissText: {
-    color: Colors.dark.text,
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-  },
+  netLabel: { color: Colors.dark.textSecondary, fontSize: 13, fontFamily: "Inter_400Regular" },
+  netValue: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  dismissBtn: { alignItems: "center", paddingVertical: 14, backgroundColor: Colors.dark.bgElevated, borderRadius: 14 },
+  dismissText: { color: Colors.dark.text, fontSize: 15, fontFamily: "Inter_600SemiBold" },
 });
