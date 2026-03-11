@@ -6,13 +6,10 @@ import React, {
   useState,
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-// ─── Storage keys ────────────────────────────────────────────────────────────
+import { NativeModules, Platform } from "react-native";
 
 const TRIPS_KEY    = "@motoganhos:trips";
 const SETTINGS_KEY = "@motoganhos:settings";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface Trip {
   id:              string;
@@ -20,7 +17,7 @@ export interface Trip {
   distanceKm:      number;
   durationMinutes: number;
   passengerRating: number;
-  createdAt:       string; // ISO string
+  createdAt:       string;
 }
 
 export interface AppSettings {
@@ -52,8 +49,6 @@ interface AppContextValue {
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
 }
 
-// ─── Defaults ────────────────────────────────────────────────────────────────
-
 const DEFAULT_SETTINGS: AppSettings = {
   kmPerLiter:            10,
   fuelPricePerLiter:     6.0,
@@ -63,8 +58,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   minGoodValuePerHour:   30.0,
 };
 
-// ─── Context ─────────────────────────────────────────────────────────────────
-
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function useApp(): AppContextValue {
@@ -73,14 +66,25 @@ export function useApp(): AppContextValue {
   return ctx;
 }
 
-// ─── Provider ────────────────────────────────────────────────────────────────
+// Sincroniza settings com SharedPreferences para uso pelo TripReaderService em background
+function syncSettingsToNative(s: AppSettings) {
+  if (Platform.OS === "android" && NativeModules.SettingsModule) {
+    NativeModules.SettingsModule.saveSettings(
+      s.kmPerLiter,
+      s.fuelPricePerLiter,
+      s.costPerKmExtra,
+      s.minGoodValuePerKm,
+      s.minGoodValuePerMinute,
+      s.minGoodValuePerHour,
+    ).catch(() => {});
+  }
+}
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [trips,     setTrips]     = useState<Trip[]>([]);
   const [settings,  setSettings]  = useState<AppSettings>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load from AsyncStorage on mount
   useEffect(() => {
     (async () => {
       try {
@@ -89,8 +93,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           AsyncStorage.getItem(SETTINGS_KEY),
         ]);
 
-        if (tripsRaw)    setTrips(JSON.parse(tripsRaw));
-        if (settingsRaw) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settingsRaw) });
+        if (tripsRaw) setTrips(JSON.parse(tripsRaw));
+
+        const loadedSettings = settingsRaw
+          ? { ...DEFAULT_SETTINGS, ...JSON.parse(settingsRaw) }
+          : DEFAULT_SETTINGS;
+
+        setSettings(loadedSettings);
+
+        // Sincronizar com SharedPreferences no boot
+        syncSettingsToNative(loadedSettings);
       } catch (e) {
         console.warn("AppContext load error:", e);
       } finally {
@@ -98,8 +110,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     })();
   }, []);
-
-  // ── addTrip ───────────────────────────────────────────────────────────────
 
   const addTrip = useCallback(
     async (data: Omit<Trip, "id" | "createdAt">) => {
@@ -115,8 +125,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [trips]
   );
 
-  // ── deleteTrip ────────────────────────────────────────────────────────────
-
   const deleteTrip = useCallback(
     async (id: string) => {
       const updated = trips.filter((t) => t.id !== id);
@@ -126,26 +134,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [trips]
   );
 
-  // ── updateTrip ────────────────────────────────────────────────────────────
-
   const updateTrip = useCallback(
     async (id: string, data: Partial<Omit<Trip, "id" | "createdAt">>) => {
-      const updated = trips.map((t) =>
-        t.id === id ? { ...t, ...data } : t
-      );
+      const updated = trips.map((t) => t.id === id ? { ...t, ...data } : t);
       setTrips(updated);
       await AsyncStorage.setItem(TRIPS_KEY, JSON.stringify(updated));
     },
     [trips]
   );
 
-  // ── updateSettings ────────────────────────────────────────────────────────
-
   const updateSettings = useCallback(
     async (patch: Partial<AppSettings>) => {
       const updated = { ...settings, ...patch };
       setSettings(updated);
       await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(updated));
+      // Sincronizar com SharedPreferences para o TripReaderService em background
+      syncSettingsToNative(updated);
     },
     [settings]
   );
@@ -158,8 +162,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     </AppContext.Provider>
   );
 }
-
-// ─── Pure helpers (exported for use in screens) ───────────────────────────────
 
 export function analyzeTripQuality(
   grossValue:      number,
@@ -201,15 +203,12 @@ export function parseUberText(text: string): {
 } | null {
   if (!text || text.length < 3) return null;
 
-  // ── money ──────────────────────────────────────────────────────────────────
   const moneyPatterns = [
     /R\$\s*(\d+[.,]\d{1,2})/gi,
     /(\d+[.,]\d{2})\s*reais/gi,
     /valor[\s:]+R?\$?\s*(\d+[.,]\d{1,2})/gi,
   ];
 
-  // ── distance ───────────────────────────────────────────────────────────────
-  // Coleta TODOS os pares tempo+distância (busca + corrida) e soma
   const pairPattern = /(\d+)\s*min(?:uto(?:s)?)?\s*\((\d+[.,]\d+|\d+)\s*km\)/gi;
   let totalDist = 0;
   let totalDur  = 0;
@@ -219,7 +218,6 @@ export function parseUberText(text: string): {
     totalDist += parseFloat(pairMatch[2].replace(",", "."));
   }
 
-  // fallback individual se não encontrou pares
   if (totalDist === 0) {
     const distPatterns = [
       /(\d+[.,]\d{1,2})\s*km/gi,
@@ -235,7 +233,6 @@ export function parseUberText(text: string): {
     totalDur = findFirst(text, timePatterns) ?? 0;
   }
 
-  // ── rating ─────────────────────────────────────────────────────────────────
   const ratingPatterns = [
     /★\s*(\d[.,]\d{1,2})/gi,
     /(\d[.,]\d{1,2})\s*★/gi,
@@ -255,8 +252,6 @@ export function parseUberText(text: string): {
 
   return { grossValue, distanceKm, durationMinutes, passengerRating };
 }
-
-// ─── Internal helper ─────────────────────────────────────────────────────────
 
 function findFirst(text: string, patterns: RegExp[]): number | null {
   for (const p of patterns) {
