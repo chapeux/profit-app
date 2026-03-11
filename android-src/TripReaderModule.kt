@@ -17,8 +17,6 @@ class TripReaderModule(private val reactContext: ReactApplicationContext)
 
     override fun initialize() {
         super.initialize()
-        // Registra callback para quando o app estiver em FOREGROUND
-        // O overlay nativo é chamado pelo TripReaderService diretamente
         TripReaderService.onTripDetected = { trip ->
             Handler(Looper.getMainLooper()).post {
                 if (reactContext.hasActiveReactInstance()) {
@@ -71,6 +69,15 @@ class TripReaderModule(private val reactContext: ReactApplicationContext)
         promise.resolve(null)
     }
 
+    // Alias: TripReader.ts chama hasOverlayPermission
+    @ReactMethod
+    fun hasOverlayPermission(promise: Promise) {
+        val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            Settings.canDrawOverlays(reactContext) else true
+        promise.resolve(ok)
+    }
+
+    // Mantido por compatibilidade
     @ReactMethod
     fun canDrawOverlays(promise: Promise) {
         val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
