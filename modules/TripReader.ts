@@ -1,34 +1,59 @@
-import { NativeModules, NativeEventEmitter, Platform, EmitterSubscription } from "react-native";
+import { NativeEventEmitter, NativeModules, Platform } from "react-native";
+
+const { TripReaderModule } = NativeModules;
 
 export interface TripReaderData {
-  grossValue: number;
-  distanceKm: number;
+  grossValue:      number;
+  distanceKm:      number;
   durationMinutes: number;
   passengerRating: number;
-  rawText: string;
+  netValue:        number;
+  valuePerKm:      number;
+  valuePerHour:    number;
+  valuePerMinute:  number;
+  signal:          "green" | "yellow" | "red";
+  score:           number;
 }
 
-const { TripReaderModule: _native } = NativeModules;
-const _isAvailable = Platform.OS === "android" && !!_native;
-let _emitter: NativeEventEmitter | null = null;
-if (_isAvailable) _emitter = new NativeEventEmitter(_native);
+const emitter = TripReaderModule
+  ? new NativeEventEmitter(TripReaderModule)
+  : null;
 
 export const TripReader = {
-  isAvailable(): boolean { return _isAvailable; },
+  isAvailable(): boolean {
+    return Platform.OS === "android" && !!TripReaderModule;
+  },
+
   async isAccessibilityEnabled(): Promise<boolean> {
-    if (!_isAvailable) return false;
-    try { return await _native.isAccessibilityEnabled(); } catch { return false; }
+    if (!TripReaderModule) return false;
+    return TripReaderModule.isAccessibilityEnabled();
   },
-  async isServiceRunning(): Promise<boolean> {
-    if (!_isAvailable) return false;
-    try { return await _native.isServiceRunning(); } catch { return false; }
+
+  async hasOverlayPermission(): Promise<boolean> {
+    if (!TripReaderModule) return false;
+    return TripReaderModule.hasOverlayPermission();
   },
-  openAccessibilitySettings(): void { if (_isAvailable) _native.openAccessibilitySettings(); },
-  startListening(): void { if (_isAvailable) _native.startListening(); },
-  stopListening(): void { if (_isAvailable) _native.stopListening(); },
+
+  async requestOverlayPermission(): Promise<boolean> {
+    if (!TripReaderModule) return false;
+    return TripReaderModule.requestOverlayPermission();
+  },
+
+  startListening(): void {
+    TripReaderModule?.startListening();
+  },
+
+  stopListening(): void {
+    TripReaderModule?.stopListening();
+  },
+
+  openAccessibilitySettings(): void {
+    TripReaderModule?.openAccessibilitySettings();
+  },
+
   addListener(callback: (data: TripReaderData) => void): () => void {
-    if (!_isAvailable || !_emitter) return () => {};
-    const sub: EmitterSubscription = _emitter.addListener("TripReaderDetected", callback);
+    if (!emitter) return () => {};
+    const sub = emitter.addListener("TripReaderDetected", callback);
     return () => sub.remove();
   },
-} as const;
+};
