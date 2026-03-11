@@ -1,78 +1,138 @@
-const { withAndroidManifest, withDangerousMod, withPlugins } = require("@expo/config-plugins");
+const { withAndroidManifest, withDangerousMod } = require("@expo/config-plugins");
+const fs   = require("fs");
 const path = require("path");
-const fs = require("fs");
 
-function withAccessibilityManifest(config) {
+// ─── 1. Manifest: permissions + service ───────────────────────────────────────
+function withManifest(config) {
   return withAndroidManifest(config, (cfg) => {
-    const manifest = cfg.modResults.manifest;
-    if (!manifest["uses-permission"]) manifest["uses-permission"] = [];
-    const PERM = "android.permission.BIND_ACCESSIBILITY_SERVICE";
-    if (!manifest["uses-permission"].some((p) => p.$?.["android:name"] === PERM)) {
-      manifest["uses-permission"].push({ $: { "android:name": PERM } });
-    }
-    const app = manifest.application?.[0];
-    if (!app) return cfg;
-    if (!app.service) app.service = [];
-    const SERVICE_CLASS = "com.motoganhos.TripReaderService";
-    if (!app.service.some((s) => s.$?.["android:name"] === SERVICE_CLASS)) {
-      app.service.push({
-        $: { "android:name": SERVICE_CLASS, "android:permission": "android.permission.BIND_ACCESSIBILITY_SERVICE", "android:exported": "true" },
+    const manifest    = cfg.modResults;
+    const app         = manifest.manifest;
+    const mainApp     = app.application[0];
+
+    // Permissions
+    const needed = [
+      "android.permission.BIND_ACCESSIBILITY_SERVICE",
+      "android.permission.SYSTEM_ALERT_WINDOW",
+    ];
+    if (!app["uses-permission"]) app["uses-permission"] = [];
+    needed.forEach((name) => {
+      const exists = app["uses-permission"].some((p) => p.$?.["android:name"] === name);
+      if (!exists) app["uses-permission"].push({ $: { "android:name": name } });
+    });
+
+    // AccessibilityService declaration
+    if (!mainApp.service) mainApp.service = [];
+    const svcName = "com.motoganhos.TripReaderService";
+    const exists  = mainApp.service.some((s) => s.$?.["android:name"] === svcName);
+    if (!exists) {
+      mainApp.service.push({
+        $: {
+          "android:name":       svcName,
+          "android:permission": "android.permission.BIND_ACCESSIBILITY_SERVICE",
+          "android:exported":   "true",
+        },
         "intent-filter": [{ action: [{ $: { "android:name": "android.accessibilityservice.AccessibilityService" } }] }],
-        "meta-data": [{ $: { "android:name": "android.accessibilityservice", "android:resource": "@xml/trip_reader_config" } }],
+        "meta-data": [{
+          $: {
+            "android:name":     "android.accessibilityservice",
+            "android:resource": "@xml/trip_reader_config",
+          },
+        }],
       });
     }
+
     return cfg;
   });
 }
 
-function withAccessibilityFiles(config) {
-  return withDangerousMod(config, ["android", (cfg) => {
-    const projectRoot = cfg.modRequest.projectRoot;
-    const androidMain = path.join(projectRoot, "android", "app", "src", "main");
-    const javaDir = path.join(androidMain, "java", "com", "motoganhos");
-    const xmlDir = path.join(androidMain, "res", "xml");
-    const srcDir = path.join(projectRoot, "android-src");
-    fs.mkdirSync(javaDir, { recursive: true });
-    fs.mkdirSync(xmlDir, { recursive: true });
-    for (const file of ["TripTextParser.kt", "TripReaderService.kt", "TripReaderModule.kt", "TripReaderPackage.kt"]) {
-      const src = path.join(srcDir, file);
-      const dst = path.join(javaDir, file);
-      if (fs.existsSync(src)) { fs.copyFileSync(src, dst); console.log(`[withTripAccessibility] Copied ${file}`); }
-      else { console.warn(`[withTripAccessibility] Not found: ${src}`); }
-    }
-    const xmlSrc = path.join(srcDir, "trip_reader_config.xml");
-    if (fs.existsSync(xmlSrc)) { fs.copyFileSync(xmlSrc, path.join(xmlDir, "trip_reader_config.xml")); }
-    let mainAppPath = path.join(javaDir, "MainApplication.kt");
-    if (!fs.existsSync(mainAppPath)) mainAppPath = findFile(path.join(androidMain, "java"), "MainApplication.kt", 5);
-    if (mainAppPath && fs.existsSync(mainAppPath)) {
-      let content = fs.readFileSync(mainAppPath, "utf8");
-      if (!content.includes("TripReaderPackage")) {
-        content = content.replace(/^(package\s+[\w.]+\s*\n)/m, "$1\nimport com.motoganhos.TripReaderPackage\n");
-        if (content.includes("PackageList(this).packages.apply")) {
-          content = content.replace(/(PackageList\(this\)\.packages\.apply\s*\{)/, "$1\n              add(TripReaderPackage())");
-        } else if (content.includes("val packages = PackageList(this).packages")) {
-          content = content.replace(/(val packages = PackageList\(this\)\.packages)/, "$1\n      packages.add(TripReaderPackage())");
+// ─── 2. Copy Kotlin sources + XML ─────────────────────────────────────────────
+function withKotlinSources(config) {
+  return withDangerousMod(config, [
+    "android",
+    (cfg) => {
+      const root    = cfg.modRequest.projectRoot;
+      const srcDir  = path.join(root, "android-src");
+      const destDir = path.join(root, "android", "app", "src", "main", "java", "com", "motoganhos");
+      const xmlDir  = path.join(root, "android", "app", "src", "main", "res", "xml");
+
+      fs.mkdirSync(destDir, { recursive: true });
+      fs.mkdirSync(xmlDir,  { recursive: true });
+
+      const ktFiles = [
+        "TripReaderService.kt",
+        "TripReaderModule.kt",
+        "TripReaderPackage.kt",
+        "TripTextParser.kt",
+        "TripOverlayView.kt",
+      ];
+
+      ktFiles.forEach((file) => {
+        const src = path.join(srcDir, file);
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, path.join(destDir, file));
+          console.log(`[withTripAccessibility] copied ${file}`);
         } else {
-          content = content.replace(/(override fun getPackages\(\)[^\{]*\{)/, "$1\n          add(TripReaderPackage())");
+          console.warn(`[withTripAccessibility] missing: ${src}`);
         }
-        fs.writeFileSync(mainAppPath, content, "utf8");
-        console.log(`[withTripAccessibility] Patched MainApplication.kt`);
+      });
+
+      // Copy XML config
+      const xmlSrc = path.join(srcDir, "trip_reader_config.xml");
+      if (fs.existsSync(xmlSrc)) {
+        fs.copyFileSync(xmlSrc, path.join(xmlDir, "trip_reader_config.xml"));
+        console.log("[withTripAccessibility] copied trip_reader_config.xml");
       }
-    }
-    return cfg;
-  }]);
+
+      return cfg;
+    },
+  ]);
 }
 
-function findFile(dir, filename, maxDepth) {
-  if (maxDepth <= 0 || !fs.existsSync(dir)) return null;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isFile() && entry.name === filename) return full;
-    if (entry.isDirectory()) { const found = findFile(full, filename, maxDepth - 1); if (found) return found; }
-  }
-  return null;
+// ─── 3. Patch MainApplication.kt to register TripReaderPackage ────────────────
+function withMainApplicationPatch(config) {
+  return withDangerousMod(config, [
+    "android",
+    (cfg) => {
+      const root    = cfg.modRequest.projectRoot;
+      const pkgName = cfg.android?.package ?? "com.motoganhos";
+      const parts   = pkgName.split(".");
+      const mainApp = path.join(
+        root, "android", "app", "src", "main", "java",
+        ...parts, "MainApplication.kt"
+      );
+
+      if (!fs.existsSync(mainApp)) {
+        console.warn("[withTripAccessibility] MainApplication.kt not found — skipping patch");
+        return cfg;
+      }
+
+      let src = fs.readFileSync(mainApp, "utf8");
+
+      // Add import if missing
+      const importLine = "import com.motoganhos.TripReaderPackage";
+      if (!src.includes(importLine)) {
+        src = src.replace(/^(package .+)$/m, `$1\n${importLine}`);
+      }
+
+      // Patch packages list — handles both apply{} and plain list styles
+      if (!src.includes("TripReaderPackage()")) {
+        src = src
+          .replace(
+            /PackageList\(this\)\.packages\.apply\s*\{/,
+            "PackageList(this).packages.apply {\n          add(TripReaderPackage())"
+          )
+          .replace(
+            /PackageList\(this\)\.packages(?!\.apply)/,
+            "PackageList(this).packages.also { it.add(TripReaderPackage()) }"
+          );
+      }
+
+      fs.writeFileSync(mainApp, src, "utf8");
+      console.log("[withTripAccessibility] patched MainApplication.kt");
+      return cfg;
+    },
+  ]);
 }
 
-module.exports = function withTripAccessibility(config) {
-  return withPlugins(config, [withAccessibilityManifest, withAccessibilityFiles]);
-};
+module.exports = (config) =>
+  withMainApplicationPatch(withKotlinSources(withManifest(config)));
