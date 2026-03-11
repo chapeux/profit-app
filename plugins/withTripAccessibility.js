@@ -2,13 +2,10 @@ const { withAndroidManifest, withDangerousMod, withPlugins } = require("@expo/co
 const path = require("path");
 const fs   = require("fs");
 
-// ── 1. Manifesto ─────────────────────────────────────────────────────────────
-
 function withManifest(config) {
   return withAndroidManifest(config, (cfg) => {
     const manifest = cfg.modResults.manifest;
 
-    // Permissões
     if (!manifest["uses-permission"]) manifest["uses-permission"] = [];
     for (const perm of [
       "android.permission.BIND_ACCESSIBILITY_SERVICE",
@@ -24,7 +21,6 @@ function withManifest(config) {
     if (!app) return cfg;
     if (!app.service) app.service = [];
 
-    // TripReaderService (AccessibilityService)
     const A11Y_CLASS = "com.motoganhos.TripReaderService";
     if (!app.service.some((s) => s.$?.["android:name"] === A11Y_CLASS)) {
       app.service.push({
@@ -38,22 +34,16 @@ function withManifest(config) {
       });
     }
 
-    // OverlayService (Service simples, sem foreground)
     const OVL_CLASS = "com.motoganhos.OverlayService";
     if (!app.service.some((s) => s.$?.["android:name"] === OVL_CLASS)) {
       app.service.push({
-        $: {
-          "android:name":     OVL_CLASS,
-          "android:exported": "false",
-        },
+        $: { "android:name": OVL_CLASS, "android:exported": "false" },
       });
     }
 
     return cfg;
   });
 }
-
-// ── 2. Copiar arquivos Kotlin + patch MainApplication ─────────────────────────
 
 function withFiles(config) {
   return withDangerousMod(config, [
@@ -68,7 +58,6 @@ function withFiles(config) {
       fs.mkdirSync(javaDir, { recursive: true });
       fs.mkdirSync(xmlDir,  { recursive: true });
 
-      // Arquivos Kotlin a copiar
       const kotlinFiles = [
         "TripTextParser.kt",
         "TripReaderService.kt",
@@ -77,6 +66,8 @@ function withFiles(config) {
         "OverlayService.kt",
         "OverlayModule.kt",
         "OverlayPackage.kt",
+        "SettingsModule.kt",
+        "SettingsPackage.kt",
       ];
       for (const file of kotlinFiles) {
         const src = path.join(srcDir, file);
@@ -89,44 +80,40 @@ function withFiles(config) {
         }
       }
 
-      // XML de config do accessibility service
       const xmlSrc = path.join(srcDir, "trip_reader_config.xml");
       const xmlDst = path.join(xmlDir,  "trip_reader_config.xml");
       if (fs.existsSync(xmlSrc)) {
         fs.copyFileSync(xmlSrc, xmlDst);
-        console.log("[withTripAccessibility] Copiado trip_reader_config.xml");
       }
 
-      // Patch MainApplication.kt — registrar TripReaderPackage + OverlayPackage
+      // Patch MainApplication.kt
       const mainApp = path.join(javaDir, "MainApplication.kt");
       if (fs.existsSync(mainApp)) {
         let content = fs.readFileSync(mainApp, "utf8");
 
-        if (!content.includes("TripReaderPackage")) {
-          content = content.replace(
-            /^(package com\.motoganhos\s*\n)/m,
-            "$1\nimport com.motoganhos.TripReaderPackage\n"
-          );
-          content = content.replace(
-            /(val packages = PackageList\(this\)\.packages)/,
-            "$1\n      packages.add(TripReaderPackage())"
-          );
-        }
-        if (!content.includes("OverlayPackage")) {
-          content = content.replace(
-            /^(package com\.motoganhos\s*\n)/m,
-            "$1\nimport com.motoganhos.OverlayPackage\n"
-          );
-          content = content.replace(
-            /(val packages = PackageList\(this\)\.packages)/,
-            "$1\n      packages.add(OverlayPackage())"
-          );
+        const packages = [
+          ["TripReaderPackage", "com.motoganhos.TripReaderPackage"],
+          ["OverlayPackage",    "com.motoganhos.OverlayPackage"],
+          ["SettingsPackage",   "com.motoganhos.SettingsPackage"],
+        ];
+
+        for (const [className, importPath] of packages) {
+          if (!content.includes(className)) {
+            content = content.replace(
+              /^(package com\.motoganhos\s*\n)/m,
+              `$1\nimport ${importPath}\n`
+            );
+            content = content.replace(
+              /(val packages = PackageList\(this\)\.packages)/,
+              `$1\n      packages.add(${className}())`
+            );
+          }
         }
 
         fs.writeFileSync(mainApp, content, "utf8");
         console.log("[withTripAccessibility] MainApplication.kt patcheado");
       } else {
-        console.warn("[withTripAccessibility] MainApplication.kt não encontrado — rode expo prebuild primeiro");
+        console.warn("[withTripAccessibility] MainApplication.kt não encontrado");
       }
 
       return cfg;
