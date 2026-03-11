@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Animated,
   Alert,
+  Animated,
   Modal,
   Platform,
   Pressable,
@@ -59,11 +59,10 @@ interface RealtimePopupProps {
   data: ReturnType<typeof analyzeTripQuality> | null;
   rawValues: { gross: number; dist: number; dur: number; rating: number } | null;
   settings: ReturnType<typeof useApp>["settings"];
-  source: "accessibility" | "clipboard";
   onDismiss: () => void;
 }
 
-function RealtimePopup({ visible, data, rawValues, settings, source, onDismiss }: RealtimePopupProps) {
+function RealtimePopup({ visible, data, rawValues, settings, onDismiss }: RealtimePopupProps) {
   const translateY = useRef(new Animated.Value(300)).current;
   const opacity    = useRef(new Animated.Value(0)).current;
 
@@ -84,6 +83,7 @@ function RealtimePopup({ visible, data, rawValues, settings, source, onDismiss }
   if (!data || !rawValues) return null;
 
   const sigColor = SIGNAL_COLORS[data.signal];
+  const borderColor = sigColor;
 
   return (
     <Modal transparent animationType="none" visible={visible} onRequestClose={onDismiss}>
@@ -92,75 +92,56 @@ function RealtimePopup({ visible, data, rawValues, settings, source, onDismiss }
         <Animated.View style={[popup.sheet, { transform: [{ translateY }] }]}>
           <View style={popup.dragHandle} />
 
-          <View style={popup.badge}>
-            <Ionicons
-              name={source === "accessibility" ? "accessibility" : "flash"}
-              size={11}
-              color={Colors.accent}
-            />
-            <Text style={popup.badgeText}>
-              {source === "accessibility" ? "Leitura via Acessibilidade" : "Leitura via Clipboard"}
-            </Text>
-          </View>
+          {/* ── Semaphore + values grid ── */}
+          <View style={[popup.card, { borderColor }]}>
+            <View style={popup.cardRow}>
+              {/* Semaphore */}
+              <View style={popup.semCol}>
+                {(["red","yellow","green"] as const).map((light) => (
+                  <View
+                    key={light}
+                    style={[
+                      popup.semLight,
+                      { backgroundColor: data.signal === light ? SIGNAL_COLORS[light] : "#2A2A2A" },
+                    ]}
+                  />
+                ))}
+              </View>
 
-          <View style={popup.topRow}>
-            <Semaphore signal={data.signal} size={36} />
-            <View style={{ flex: 1 }}>
-              <Text style={[popup.signalLabel, { color: sigColor }]}>{SIGNAL_LABELS[data.signal]}</Text>
-              <Text style={popup.scoreText}>Score: {data.score}/100</Text>
-            </View>
-          </View>
-
-          <View style={popup.divider} />
-
-          <View style={popup.valuesGrid}>
-            <View style={popup.valueCell}>
-              <Text style={[popup.valueBig, { color: sigColor }]}>{formatCurrency(data.valuePerKm)}</Text>
-              <Text style={popup.valueLabel}>por km</Text>
-            </View>
-            <View style={popup.valueDivider} />
-            <View style={popup.valueCell}>
-              <Text style={[popup.valueBig, { color: sigColor }]}>{formatCurrency(data.valuePerHour)}</Text>
-              <Text style={popup.valueLabel}>por hora</Text>
-            </View>
-            <View style={popup.valueDivider} />
-            <View style={popup.valueCell}>
-              <Text style={[popup.valueBig, { color: sigColor }]}>{formatCurrency(data.valuePerMinute)}</Text>
-              <Text style={popup.valueLabel}>por min</Text>
-            </View>
-          </View>
-
-          <View style={popup.divider} />
-
-          <View style={popup.detailRow}>
-            <View style={popup.detailItem}>
-              <Text style={popup.detailLabel}>Valor bruto</Text>
-              <Text style={popup.detailValue}>{formatCurrency(rawValues.gross)}</Text>
-            </View>
-            <View style={popup.detailItem}>
-              <Text style={popup.detailLabel}>Distância</Text>
-              <Text style={popup.detailValue}>{rawValues.dist.toFixed(1)} km</Text>
-            </View>
-            <View style={popup.detailItem}>
-              <Text style={popup.detailLabel}>Duração</Text>
-              <Text style={popup.detailValue}>{rawValues.dur.toFixed(0)} min</Text>
-            </View>
-            {rawValues.rating > 0 && (
-              <View style={popup.detailItem}>
-                <Text style={popup.detailLabel}>Passageiro</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-                  <Ionicons name="star" size={12} color={Colors.warning} />
-                  <Text style={popup.detailValue}>{rawValues.rating.toFixed(1)}</Text>
+              {/* Values */}
+              <View style={popup.valGrid}>
+                <View style={popup.valCell}>
+                  <Text style={[popup.valBig, { color: sigColor }]}>{formatCurrency(data.valuePerKm)}</Text>
+                  <Text style={popup.valLabel}>por km</Text>
+                </View>
+                <View style={popup.valDivider} />
+                <View style={popup.valCell}>
+                  <Text style={[popup.valBig, { color: sigColor }]}>{formatCurrency(data.valuePerHour)}</Text>
+                  <Text style={popup.valLabel}>por hora</Text>
+                </View>
+                <View style={popup.valDivider} />
+                <View style={popup.valCell}>
+                  <Text style={[popup.valBig, { color: sigColor }]}>{formatCurrency(data.valuePerMinute)}</Text>
+                  <Text style={popup.valLabel}>por min</Text>
                 </View>
               </View>
-            )}
-          </View>
+            </View>
 
-          <View style={popup.netRow}>
-            <Text style={popup.netLabel}>Lucro líquido estimado</Text>
-            <Text style={[popup.netValue, { color: data.netValue >= 0 ? Colors.accent : Colors.danger }]}>
-              {formatCurrency(data.netValue)}
-            </Text>
+            <View style={popup.innerDivider} />
+
+            {/* Lucro + rating */}
+            <View style={popup.bottomRow}>
+              <Text style={popup.netLabel}>Lucro líquido estimado</Text>
+              <Text style={[popup.netValue, { color: data.netValue >= 0 ? Colors.accent : Colors.danger }]}>
+                {formatCurrency(data.netValue)}
+              </Text>
+              {rawValues.rating > 0 && (
+                <View style={popup.ratingPill}>
+                  <Ionicons name="star" size={12} color={Colors.warning} />
+                  <Text style={popup.ratingText}>{rawValues.rating.toFixed(1)}</Text>
+                </View>
+              )}
+            </View>
           </View>
 
           <Pressable style={popup.dismissBtn} onPress={onDismiss}>
@@ -183,7 +164,6 @@ export default function AnalisarScreen() {
   );
   const [clipFound, setClipFound]       = useState(false);
   const [popupVisible, setPopupVisible] = useState(false);
-  const [popupSource, setPopupSource]   = useState<"accessibility" | "clipboard">("clipboard");
   const [realtimeData, setRealtimeData] = useState<ReturnType<typeof analyzeTripQuality> | null>(null);
   const [realtimeRaw, setRealtimeRaw]   = useState<{ gross: number; dist: number; dur: number; rating: number } | null>(null);
   const [testText, setTestText]         = useState("");
@@ -211,11 +191,10 @@ export default function AnalisarScreen() {
   }, []);
 
   const handleTripDetected = useCallback(
-    (gross: number, dist: number, dur: number, rating: number, src: "accessibility" | "clipboard") => {
+    (gross: number, dist: number, dur: number, rating: number) => {
       const analysis = analyzeTripQuality(gross, dist, dur, settings);
       setRealtimeData(analysis);
       setRealtimeRaw({ gross, dist, dur, rating });
-      setPopupSource(src);
       setPopupVisible(true);
 
       if (analysis.signal === "green") {
@@ -237,7 +216,7 @@ export default function AnalisarScreen() {
       const parsed = parseUberText(text);
       if (!parsed) return;
       setClipFound(true);
-      handleTripDetected(parsed.grossValue, parsed.distanceKm, parsed.durationMinutes, parsed.passengerRating, "clipboard");
+      handleTripDetected(parsed.grossValue, parsed.distanceKm, parsed.durationMinutes, parsed.passengerRating);
     } catch {
       // Clipboard unavailable
     }
@@ -253,7 +232,7 @@ export default function AnalisarScreen() {
     if (a11yStatus === "enabled") {
       TripReader.startListening();
       unsubA11yRef.current = TripReader.addListener((trip) => {
-        handleTripDetected(trip.grossValue, trip.distanceKm, trip.durationMinutes, trip.passengerRating, "accessibility");
+        handleTripDetected(trip.grossValue, trip.distanceKm, trip.durationMinutes, trip.passengerRating);
       });
     } else {
       intervalRef.current = setInterval(checkClipboard, 2000);
@@ -271,7 +250,23 @@ export default function AnalisarScreen() {
 
   const toggleRealtime = useCallback(async (val: boolean) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (val) await refreshA11yStatus();
+    if (val) {
+      await refreshA11yStatus();
+      // Pedir permissão de overlay se disponível
+      if (TripReader.isAvailable()) {
+        const hasOverlay = await TripReader.hasOverlayPermission();
+        if (!hasOverlay) {
+          Alert.alert(
+            "Permissão necessária",
+            "Para mostrar o semáforo sobre outros apps, permita que o Moto Ganhos exiba sobre outros aplicativos.",
+            [
+              { text: "Agora não", style: "cancel" },
+              { text: "Permitir", onPress: () => TripReader.requestOverlayPermission() },
+            ]
+          );
+        }
+      }
+    }
     setClipFound(false);
     setRealtimeEnabled(val);
   }, [refreshA11yStatus]);
@@ -280,7 +275,7 @@ export default function AnalisarScreen() {
     if (!testText.trim()) return;
     const parsed = parseUberText(testText);
     if (parsed) {
-      handleTripDetected(parsed.grossValue, parsed.distanceKm, parsed.durationMinutes, parsed.passengerRating, "clipboard");
+      handleTripDetected(parsed.grossValue, parsed.distanceKm, parsed.durationMinutes, parsed.passengerRating);
     } else {
       Alert.alert(
         "Parser não reconheceu",
@@ -334,10 +329,9 @@ export default function AnalisarScreen() {
     return clipFound ? "Corrida detectada!" : "Aguardando dados do Uber...";
   })();
 
-  const toggleIconName = (() => {
-    if (a11yStatus === "enabled") return realtimeEnabled ? "accessibility" : "accessibility-outline";
-    return realtimeEnabled ? "flash" : "flash-outline";
-  })();
+  const toggleIconName = a11yStatus === "enabled"
+    ? (realtimeEnabled ? "accessibility" : "accessibility-outline")
+    : (realtimeEnabled ? "flash" : "flash-outline");
 
   const topInset = Platform.OS === "web" ? Math.max(insets.top, 67) : insets.top;
   const rating   = parseFloat(passengerRating.replace(",", ".")) || 0;
@@ -358,11 +352,8 @@ export default function AnalisarScreen() {
         <View style={[styles.realtimeCard, realtimeEnabled && styles.realtimeCardActive]}>
           <View style={styles.realtimeLeft}>
             <View style={[styles.realtimeIcon, realtimeEnabled && styles.realtimeIconActive]}>
-              <Ionicons
-                name={toggleIconName as any}
-                size={20}
-                color={realtimeEnabled ? Colors.dark.bg : C.textSecondary}
-              />
+              <Ionicons name={toggleIconName as any} size={20}
+                color={realtimeEnabled ? Colors.dark.bg : C.textSecondary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.realtimeTitle}>Analisar em tempo real</Text>
@@ -388,13 +379,10 @@ export default function AnalisarScreen() {
               Para leitura automática das ofertas, ative o serviço
               "Moto Ganhos" nas configurações de acessibilidade do Android.
             </Text>
-            <Pressable
-              style={styles.a11yBtn}
-              onPress={() => {
-                TripReader.openAccessibilitySettings();
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              }}
-            >
+            <Pressable style={styles.a11yBtn} onPress={() => {
+              TripReader.openAccessibilitySettings();
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            }}>
               <Ionicons name="settings-outline" size={16} color={Colors.dark.bg} />
               <Text style={styles.a11yBtnText}>Abrir Configurações de Acessibilidade</Text>
             </Pressable>
@@ -415,8 +403,8 @@ export default function AnalisarScreen() {
               </Text>
             </View>
             <Text style={styles.a11yHint}>
-              Abra o Uber Driver. O semáforo aparece automaticamente ao receber
-              uma oferta de corrida, sem precisar copiar nada.
+              O semáforo aparece automaticamente sobre qualquer app quando uma
+              oferta de corrida for detectada.
             </Text>
           </View>
         )}
@@ -475,9 +463,7 @@ export default function AnalisarScreen() {
           <View style={styles.dividerLine} />
         </View>
 
-        <Text style={styles.subtitle}>
-          Insira os dados da corrida para análise instantânea
-        </Text>
+        <Text style={styles.subtitle}>Insira os dados da corrida para análise instantânea</Text>
 
         {/* ─── MANUAL FORM ────────────────────────────────────────────── */}
         <View style={styles.inputGroup}>
@@ -486,30 +472,16 @@ export default function AnalisarScreen() {
               <Text style={styles.inputLabel}>Valor bruto (R$)</Text>
               <View style={styles.inputField}>
                 <Ionicons name="cash-outline" size={16} color={C.textSecondary} />
-                <TextInput
-                  style={styles.input}
-                  value={grossValue}
-                  onChangeText={setGrossValue}
-                  placeholder="0,00"
-                  placeholderTextColor={C.textMuted}
-                  keyboardType="decimal-pad"
-                  returnKeyType="next"
-                />
+                <TextInput style={styles.input} value={grossValue} onChangeText={setGrossValue}
+                  placeholder="0,00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" returnKeyType="next" />
               </View>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.inputLabel}>Distância (km)</Text>
               <View style={styles.inputField}>
                 <Ionicons name="navigate-outline" size={16} color={C.textSecondary} />
-                <TextInput
-                  style={styles.input}
-                  value={distanceKm}
-                  onChangeText={setDistanceKm}
-                  placeholder="0,0"
-                  placeholderTextColor={C.textMuted}
-                  keyboardType="decimal-pad"
-                  returnKeyType="next"
-                />
+                <TextInput style={styles.input} value={distanceKm} onChangeText={setDistanceKm}
+                  placeholder="0,0" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" returnKeyType="next" />
               </View>
             </View>
           </View>
@@ -518,30 +490,16 @@ export default function AnalisarScreen() {
               <Text style={styles.inputLabel}>Duração (min)</Text>
               <View style={styles.inputField}>
                 <Ionicons name="time-outline" size={16} color={C.textSecondary} />
-                <TextInput
-                  style={styles.input}
-                  value={durationMinutes}
-                  onChangeText={setDurationMinutes}
-                  placeholder="0"
-                  placeholderTextColor={C.textMuted}
-                  keyboardType="decimal-pad"
-                  returnKeyType="next"
-                />
+                <TextInput style={styles.input} value={durationMinutes} onChangeText={setDurationMinutes}
+                  placeholder="0" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" returnKeyType="next" />
               </View>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.inputLabel}>Nota passageiro</Text>
               <View style={styles.inputField}>
                 <Ionicons name="star-outline" size={16} color={C.textSecondary} />
-                <TextInput
-                  style={styles.input}
-                  value={passengerRating}
-                  onChangeText={setPassengerRating}
-                  placeholder="5,0"
-                  placeholderTextColor={C.textMuted}
-                  keyboardType="decimal-pad"
-                  returnKeyType="done"
-                />
+                <TextInput style={styles.input} value={passengerRating} onChangeText={setPassengerRating}
+                  placeholder="5,0" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" returnKeyType="done" />
               </View>
             </View>
           </View>
@@ -565,32 +523,16 @@ export default function AnalisarScreen() {
                 </View>
               )}
             </View>
-
             <View style={styles.rowDivider} />
-
-            <InfoRow
-              label="Valor por KM"
-              value={formatCurrency(manualResult.valuePerKm) + "/km"}
-              color={manualResult.valuePerKm >= settings.minGoodValuePerKm ? Colors.accent : manualResult.valuePerKm >= settings.minGoodValuePerKm * 0.6 ? Colors.warning : Colors.danger}
-            />
-            <InfoRow
-              label="Valor por hora"
-              value={formatCurrency(manualResult.valuePerHour) + "/h"}
-              color={manualResult.valuePerHour >= settings.minGoodValuePerHour ? Colors.accent : manualResult.valuePerHour >= settings.minGoodValuePerHour * 0.6 ? Colors.warning : Colors.danger}
-            />
-            <InfoRow
-              label="Valor por minuto"
-              value={formatCurrency(manualResult.valuePerMinute) + "/min"}
-              color={manualResult.valuePerMinute >= settings.minGoodValuePerMinute ? Colors.accent : manualResult.valuePerMinute >= settings.minGoodValuePerMinute * 0.6 ? Colors.warning : Colors.danger}
-            />
-            <InfoRow
-              label="Lucro líquido"
-              value={formatCurrency(manualResult.netValue)}
-              color={manualResult.netValue >= 0 ? Colors.accent : Colors.danger}
-            />
-
+            <InfoRow label="Valor por KM" value={formatCurrency(manualResult.valuePerKm) + "/km"}
+              color={manualResult.valuePerKm >= settings.minGoodValuePerKm ? Colors.accent : manualResult.valuePerKm >= settings.minGoodValuePerKm * 0.6 ? Colors.warning : Colors.danger} />
+            <InfoRow label="Valor por hora" value={formatCurrency(manualResult.valuePerHour) + "/h"}
+              color={manualResult.valuePerHour >= settings.minGoodValuePerHour ? Colors.accent : manualResult.valuePerHour >= settings.minGoodValuePerHour * 0.6 ? Colors.warning : Colors.danger} />
+            <InfoRow label="Valor por minuto" value={formatCurrency(manualResult.valuePerMinute) + "/min"}
+              color={manualResult.valuePerMinute >= settings.minGoodValuePerMinute ? Colors.accent : manualResult.valuePerMinute >= settings.minGoodValuePerMinute * 0.6 ? Colors.warning : Colors.danger} />
+            <InfoRow label="Lucro líquido" value={formatCurrency(manualResult.netValue)}
+              color={manualResult.netValue >= 0 ? Colors.accent : Colors.danger} />
             <View style={styles.rowDivider} />
-
             <View style={styles.thresholdsRow}>
               <View style={styles.threshold}>
                 <Ionicons name="checkmark-circle" size={13} color={Colors.accent} />
@@ -614,7 +556,6 @@ export default function AnalisarScreen() {
         data={realtimeData}
         rawValues={realtimeRaw}
         settings={settings}
-        source={popupSource}
         onDismiss={() => setPopupVisible(false)}
       />
     </View>
@@ -624,89 +565,41 @@ export default function AnalisarScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { paddingHorizontal: 16 },
-  title: {
-    fontSize: 28,
-    fontFamily: "Inter_700Bold",
-    color: Colors.dark.text,
-    marginBottom: 20,
-  },
-  subtitle: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: Colors.dark.textSecondary,
-    marginBottom: 16,
-  },
+  title: { fontSize: 28, fontFamily: "Inter_700Bold", color: Colors.dark.text, marginBottom: 20 },
+  subtitle: { fontSize: 14, fontFamily: "Inter_400Regular", color: Colors.dark.textSecondary, marginBottom: 16 },
   realtimeCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: Colors.dark.bgCard,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: Colors.dark.bgCard, borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.dark.border,
   },
   realtimeCardActive: { borderColor: Colors.accent + "55" },
   realtimeLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1, marginRight: 12 },
-  realtimeIcon: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: Colors.dark.bgElevated,
-    alignItems: "center", justifyContent: "center",
-  },
+  realtimeIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.dark.bgElevated, alignItems: "center", justifyContent: "center" },
   realtimeIconActive: { backgroundColor: Colors.accent },
   realtimeTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: Colors.dark.text },
   realtimeSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: Colors.dark.textSecondary, marginTop: 2 },
-  a11yCard: {
-    backgroundColor: Colors.dark.bgCard,
-    borderRadius: 16, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: Colors.accent + "33", gap: 12,
-  },
+  a11yCard: { backgroundColor: Colors.dark.bgCard, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.accent + "33", gap: 12 },
   a11yHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   a11yTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: Colors.dark.text },
   a11yBody: { fontSize: 13, fontFamily: "Inter_400Regular", color: Colors.dark.textSecondary, lineHeight: 20 },
-  a11yBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, backgroundColor: Colors.accent, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16,
-  },
+  a11yBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: Colors.accent, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16 },
   a11yBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: Colors.dark.bg },
   a11yRefreshBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
   a11yRefreshText: { fontSize: 13, fontFamily: "Inter_500Medium", color: Colors.accent },
   a11yHint: { fontSize: 13, fontFamily: "Inter_400Regular", color: Colors.dark.textSecondary, lineHeight: 20, marginTop: 4 },
-  instructionCard: {
-    backgroundColor: Colors.dark.bgCard,
-    borderRadius: 16, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: Colors.dark.border, gap: 12,
-  },
+  instructionCard: { backgroundColor: Colors.dark.bgCard, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.dark.border, gap: 12 },
   instructionRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  stepBadge: {
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: Colors.accent + "22",
-    alignItems: "center", justifyContent: "center", marginTop: 1,
-  },
+  stepBadge: { width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.accent + "22", alignItems: "center", justifyContent: "center", marginTop: 1 },
   stepNum: { color: Colors.accent, fontSize: 12, fontFamily: "Inter_700Bold" },
   instructionText: { flex: 1, color: Colors.dark.textSecondary, fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20 },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 },
   statusDot: { width: 7, height: 7, borderRadius: 3.5 },
   statusText: { fontSize: 12, fontFamily: "Inter_500Medium" },
-  testCard: {
-    backgroundColor: Colors.dark.bgCard,
-    borderRadius: 16, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: Colors.warning + "44", gap: 10,
-  },
+  testCard: { backgroundColor: Colors.dark.bgCard, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.warning + "44", gap: 10 },
   testHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   testTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: Colors.warning },
-  testInput: {
-    color: Colors.dark.text,
-    fontSize: 13, fontFamily: "Inter_400Regular",
-    backgroundColor: Colors.dark.bgElevated,
-    borderRadius: 10, padding: 12,
-    minHeight: 110, textAlignVertical: "top",
-  },
-  testBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 6, backgroundColor: Colors.warning, borderRadius: 12, paddingVertical: 10,
-  },
+  testInput: { color: Colors.dark.text, fontSize: 13, fontFamily: "Inter_400Regular", backgroundColor: Colors.dark.bgElevated, borderRadius: 10, padding: 12, minHeight: 110, textAlignVertical: "top" },
+  testBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: Colors.warning, borderRadius: 12, paddingVertical: 10 },
   testBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: Colors.dark.bg },
   divider: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.dark.border },
@@ -714,26 +607,14 @@ const styles = StyleSheet.create({
   inputGroup: { gap: 10, marginBottom: 20 },
   inputRow: { flexDirection: "row", gap: 10 },
   inputLabel: { fontSize: 12, fontFamily: "Inter_500Medium", color: Colors.dark.textSecondary, marginBottom: 6 },
-  inputField: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: Colors.dark.bgCard,
-    borderRadius: 12, borderWidth: 1, borderColor: Colors.dark.border,
-    paddingHorizontal: 12, paddingVertical: 10, gap: 8,
-  },
+  inputField: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.dark.bgCard, borderRadius: 12, borderWidth: 1, borderColor: Colors.dark.border, paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
   input: { flex: 1, color: Colors.dark.text, fontSize: 15, fontFamily: "Inter_500Medium" },
-  resultCard: {
-    backgroundColor: Colors.dark.bgCard,
-    borderRadius: 20, padding: 20,
-    borderWidth: 1, borderColor: Colors.dark.border, marginBottom: 24,
-  },
+  resultCard: { backgroundColor: Colors.dark.bgCard, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: Colors.dark.border, marginBottom: 24 },
   resultTop: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 12 },
   resultInfo: { flex: 1 },
   signalLabel: { fontSize: 20, fontFamily: "Inter_700Bold" },
   signalScore: { color: Colors.dark.textSecondary, fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
-  ratingBadge: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: Colors.warning + "22", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
-  },
+  ratingBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: Colors.warning + "22", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
   ratingText: { color: Colors.warning, fontSize: 14, fontFamily: "Inter_600SemiBold" },
   rowDivider: { height: 1, backgroundColor: Colors.dark.border, marginVertical: 12 },
   infoRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
@@ -745,43 +626,33 @@ const styles = StyleSheet.create({
 });
 
 const popup = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: Colors.dark.bgCard,
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 24, paddingBottom: 40,
+    padding: 20, paddingBottom: 36,
     borderTopWidth: 1, borderColor: Colors.dark.border,
   },
-  dragHandle: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: Colors.dark.border, alignSelf: "center", marginBottom: 16,
+  dragHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.dark.border, alignSelf: "center", marginBottom: 16 },
+  card: {
+    borderRadius: 16, borderWidth: 2,
+    backgroundColor: "#1C1C1E",
+    padding: 16, marginBottom: 16,
   },
-  badge: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    alignSelf: "flex-start",
-    backgroundColor: Colors.dark.accentMuted ?? "rgba(0,217,111,0.12)",
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginBottom: 16,
-  },
-  badgeText: { color: Colors.accent, fontSize: 11, fontFamily: "Inter_600SemiBold" },
-  topRow: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 16 },
-  signalLabel: { fontSize: 22, fontFamily: "Inter_700Bold" },
-  scoreText: { color: Colors.dark.textSecondary, fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 3 },
-  divider: { height: 1, backgroundColor: Colors.dark.border, marginVertical: 14 },
-  valuesGrid: { flexDirection: "row", alignItems: "center" },
-  valueCell: { flex: 1, alignItems: "center" },
-  valueDivider: { width: 1, height: 40, backgroundColor: Colors.dark.border },
-  valueBig: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  valueLabel: { color: Colors.dark.textSecondary, fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 3 },
-  detailRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
-  detailItem: { alignItems: "center" },
-  detailLabel: { color: Colors.dark.textSecondary, fontSize: 11, fontFamily: "Inter_400Regular" },
-  detailValue: { color: Colors.dark.text, fontSize: 13, fontFamily: "Inter_600SemiBold", marginTop: 2 },
-  netRow: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    backgroundColor: Colors.dark.bgElevated, borderRadius: 12, padding: 14, marginBottom: 16,
-  },
-  netLabel: { color: Colors.dark.textSecondary, fontSize: 13, fontFamily: "Inter_400Regular" },
-  netValue: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  cardRow: { flexDirection: "row", alignItems: "center" },
+  semCol: { gap: 5, marginRight: 14, alignItems: "center" },
+  semLight: { width: 22, height: 22, borderRadius: 11 },
+  valGrid: { flex: 1, flexDirection: "row", alignItems: "center" },
+  valCell: { flex: 1, alignItems: "center" },
+  valDivider: { width: 1, height: 36, backgroundColor: "#333333", marginHorizontal: 4 },
+  valBig: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  valLabel: { color: "#888888", fontSize: 10, fontFamily: "Inter_400Regular", marginTop: 2 },
+  innerDivider: { height: 1, backgroundColor: "#2A2A2A", marginVertical: 12 },
+  bottomRow: { flexDirection: "row", alignItems: "center" },
+  netLabel: { flex: 1, color: "#888888", fontSize: 12, fontFamily: "Inter_400Regular" },
+  netValue: { fontSize: 16, fontFamily: "Inter_700Bold", marginRight: 10 },
+  ratingPill: { flexDirection: "row", alignItems: "center", gap: 3 },
+  ratingText: { color: Colors.warning, fontSize: 13, fontFamily: "Inter_600SemiBold" },
   dismissBtn: { alignItems: "center", paddingVertical: 14, backgroundColor: Colors.dark.bgElevated, borderRadius: 14 },
   dismissText: { color: Colors.dark.text, fontSize: 15, fontFamily: "Inter_600SemiBold" },
 });
