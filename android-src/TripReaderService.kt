@@ -62,7 +62,7 @@ class TripReaderService : AccessibilityService() {
         // 1. Notificar o módulo RN se o app estiver em foreground
         onTripDetected?.invoke(trip)
 
-        // 2. Mostrar overlay nativo - funciona com app em background
+        // 2. Mostrar overlay nativo — funciona com app em background
         handler.post { showOverlay(trip) }
     }
 
@@ -70,21 +70,24 @@ class TripReaderService : AccessibilityService() {
         val prefs: SharedPreferences = applicationContext
             .getSharedPreferences("motoganhos_settings", Context.MODE_PRIVATE)
 
-        val kmPerLiter    = prefs.getFloat("kmPerLiter",             10f).toDouble()
-        val fuelPrice     = prefs.getFloat("fuelPricePerLiter",       6f).toDouble()
-        val costPerKmExt  = prefs.getFloat("costPerKmExtra",        0.10f).toDouble()
-        val minKm         = prefs.getFloat("minGoodValuePerKm",     1.50f).toDouble()
-        val minHour       = prefs.getFloat("minGoodValuePerHour",   30.0f).toDouble()
-        val minMin        = prefs.getFloat("minGoodValuePerMinute",  0.50f).toDouble()
-        val uberFee       = prefs.getFloat("uberFeePercent",          25f).toDouble()
+        // Lê as mesmas chaves que AppContext salva
+        val kmPerLiter   = prefs.getFloat("kmPerLiter",             10f).toDouble()
+        val fuelPrice    = prefs.getFloat("fuelPricePerLiter",       6f).toDouble()
+        val costPerKmExt = prefs.getFloat("costPerKmExtra",        0.10f).toDouble()
+        val minKm        = prefs.getFloat("minGoodValuePerKm",     1.50f).toDouble()
+        val minHour      = prefs.getFloat("minGoodValuePerHour",   30.0f).toDouble()
+        val minMin       = prefs.getFloat("minGoodValuePerMinute",  0.50f).toDouble()
 
+        // Cálculo idêntico ao AppContext.analyzeTripQuality
         val fuelCost  = (trip.distanceKm / kmPerLiter) * fuelPrice
         val extraCost = trip.distanceKm * costPerKmExt
-        val net       = trip.grossValue * (1.0 - uberFee / 100.0) - fuelCost - extraCost
-        val perKm     = if (trip.distanceKm      > 0) trip.grossValue / trip.distanceKm      else 0.0
-        val perMin    = if (trip.durationMinutes > 0) trip.grossValue / trip.durationMinutes else 0.0
-        val perHour   = perMin * 60.0
+        val net       = trip.grossValue - fuelCost - extraCost
 
+        val perKm   = if (trip.distanceKm      > 0) net / trip.distanceKm      else 0.0
+        val perMin  = if (trip.durationMinutes > 0) net / trip.durationMinutes else 0.0
+        val perHour = perMin * 60.0
+
+        // Score idêntico ao AppContext
         var score = 0
         if (perKm   >= minKm)   score += 34 else if (perKm   >= minKm   * 0.6) score += 17
         if (perMin  >= minMin)  score += 33 else if (perMin  >= minMin  * 0.6) score += 16
