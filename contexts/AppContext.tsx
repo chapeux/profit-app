@@ -1,178 +1,191 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useState,
 } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export interface Settings {
-  kmPerLiter: number;
-  fuelPricePerLiter: number;
-  costPerKmExtra: number;
-  minGoodValuePerKm: number;
-  minGoodValuePerMinute: number;
-  minGoodValuePerHour: number;
-}
+// ─── Storage keys ────────────────────────────────────────────────────────────
+
+const TRIPS_KEY    = "@motoganhos:trips";
+const SETTINGS_KEY = "@motoganhos:settings";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface Trip {
-  id: string;
-  date: string;
-  grossValue: number;
-  distanceKm: number;
+  id:              string;
+  grossValue:      number;
+  distanceKm:      number;
   durationMinutes: number;
   passengerRating: number;
-  fuelCost: number;
-  extraCost: number;
-  netValue: number;
-  notes?: string;
+  createdAt:       string; // ISO string
+}
+
+export interface AppSettings {
+  kmPerLiter:            number;
+  fuelPricePerLiter:     number;
+  costPerKmExtra:        number;
+  minGoodValuePerKm:     number;
+  minGoodValuePerMinute: number;
+  minGoodValuePerHour:   number;
+}
+
+export interface TripAnalysis {
+  valuePerKm:     number;
+  valuePerHour:   number;
+  valuePerMinute: number;
+  netValue:       number;
+  fuelCost:       number;
+  signal:         "green" | "yellow" | "red";
+  score:          number;
 }
 
 interface AppContextValue {
-  settings: Settings;
-  trips: Trip[];
-  updateSettings: (s: Partial<Settings>) => Promise<void>;
-  addTrip: (trip: Omit<Trip, "id" | "fuelCost" | "extraCost" | "netValue">) => Promise<void>;
-  removeTrip: (id: string) => Promise<void>;
-  isLoaded: boolean;
+  trips:          Trip[];
+  settings:       AppSettings;
+  isLoading:      boolean;
+  addTrip:        (trip: Omit<Trip, "id" | "createdAt">) => Promise<void>;
+  deleteTrip:     (id: string) => Promise<void>;
+  updateTrip:     (id: string, data: Partial<Omit<Trip, "id" | "createdAt">>) => Promise<void>;
+  updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
 }
 
-export const DEFAULT_SETTINGS: Settings = {
-  kmPerLiter: 12,
-  fuelPricePerLiter: 6.0,
-  costPerKmExtra: 0.1,
-  minGoodValuePerKm: 2.5,
-  minGoodValuePerMinute: 0.5,
-  minGoodValuePerHour: 30,
+// ─── Defaults ────────────────────────────────────────────────────────────────
+
+const DEFAULT_SETTINGS: AppSettings = {
+  kmPerLiter:            10,
+  fuelPricePerLiter:     6.0,
+  costPerKmExtra:        0.10,
+  minGoodValuePerKm:     1.50,
+  minGoodValuePerMinute: 0.50,
+  minGoodValuePerHour:   30.0,
 };
+
+// ─── Context ─────────────────────────────────────────────────────────────────
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-const SETTINGS_KEY = "@motoganhos:settings";
-const TRIPS_KEY = "@motoganhos:trips";
+export function useApp(): AppContextValue {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error("useApp must be used inside AppProvider");
+  return ctx;
+}
+
+// ─── Provider ────────────────────────────────────────────────────────────────
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [trips,     setTrips]     = useState<Trip[]>([]);
+  const [settings,  setSettings]  = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Load from AsyncStorage on mount
   useEffect(() => {
-    const load = async () => {
+    (async () => {
       try {
-        const [rawSettings, rawTrips] = await Promise.all([
-          AsyncStorage.getItem(SETTINGS_KEY),
+        const [tripsRaw, settingsRaw] = await Promise.all([
           AsyncStorage.getItem(TRIPS_KEY),
+          AsyncStorage.getItem(SETTINGS_KEY),
         ]);
-        if (rawSettings) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(rawSettings) });
-        if (rawTrips) setTrips(JSON.parse(rawTrips));
+
+        if (tripsRaw)    setTrips(JSON.parse(tripsRaw));
+        if (settingsRaw) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settingsRaw) });
       } catch (e) {
-        console.error("Load error", e);
+        console.warn("AppContext load error:", e);
       } finally {
-        setIsLoaded(true);
+        setIsLoading(false);
       }
-    };
-    load();
+    })();
   }, []);
 
-  const updateSettings = useCallback(async (partial: Partial<Settings>) => {
-    setSettings((prev) => {
-      const next = { ...prev, ...partial };
-      AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
+  // ── addTrip ───────────────────────────────────────────────────────────────
 
-  const calcCosts = useCallback(
-    (distanceKm: number, grossValue: number) => {
-      const fuelCost = (distanceKm / settings.kmPerLiter) * settings.fuelPricePerLiter;
-      const extraCost = distanceKm * settings.costPerKmExtra;
-      const netValue = grossValue - fuelCost - extraCost;
-      return { fuelCost, extraCost, netValue };
+  const addTrip = useCallback(
+    async (data: Omit<Trip, "id" | "createdAt">) => {
+      const trip: Trip = {
+        ...data,
+        id:        Math.random().toString(36).slice(2) + Date.now().toString(36),
+        createdAt: new Date().toISOString(),
+      };
+      const updated = [trip, ...trips];
+      setTrips(updated);
+      await AsyncStorage.setItem(TRIPS_KEY, JSON.stringify(updated));
+    },
+    [trips]
+  );
+
+  // ── deleteTrip ────────────────────────────────────────────────────────────
+
+  const deleteTrip = useCallback(
+    async (id: string) => {
+      const updated = trips.filter((t) => t.id !== id);
+      setTrips(updated);
+      await AsyncStorage.setItem(TRIPS_KEY, JSON.stringify(updated));
+    },
+    [trips]
+  );
+
+  // ── updateTrip ────────────────────────────────────────────────────────────
+
+  const updateTrip = useCallback(
+    async (id: string, data: Partial<Omit<Trip, "id" | "createdAt">>) => {
+      const updated = trips.map((t) =>
+        t.id === id ? { ...t, ...data } : t
+      );
+      setTrips(updated);
+      await AsyncStorage.setItem(TRIPS_KEY, JSON.stringify(updated));
+    },
+    [trips]
+  );
+
+  // ── updateSettings ────────────────────────────────────────────────────────
+
+  const updateSettings = useCallback(
+    async (patch: Partial<AppSettings>) => {
+      const updated = { ...settings, ...patch };
+      setSettings(updated);
+      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(updated));
     },
     [settings]
   );
 
-  const addTrip = useCallback(
-    async (raw: Omit<Trip, "id" | "fuelCost" | "extraCost" | "netValue">) => {
-      const { fuelCost, extraCost, netValue } = calcCosts(raw.distanceKm, raw.grossValue);
-      const trip: Trip = {
-        ...raw,
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        fuelCost,
-        extraCost,
-        netValue,
-      };
-      setTrips((prev) => {
-        const next = [trip, ...prev];
-        AsyncStorage.setItem(TRIPS_KEY, JSON.stringify(next));
-        return next;
-      });
-    },
-    [calcCosts]
+  return (
+    <AppContext.Provider
+      value={{ trips, settings, isLoading, addTrip, deleteTrip, updateTrip, updateSettings }}
+    >
+      {children}
+    </AppContext.Provider>
   );
-
-  const removeTrip = useCallback(async (id: string) => {
-    setTrips((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      AsyncStorage.setItem(TRIPS_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
-
-  const value = useMemo(
-    () => ({ settings, trips, updateSettings, addTrip, removeTrip, isLoaded }),
-    [settings, trips, updateSettings, addTrip, removeTrip, isLoaded]
-  );
-
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
-export function useApp() {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error("useApp must be used within AppProvider");
-  return ctx;
-}
-
-export interface TripAnalysis {
-  valuePerKm: number;
-  valuePerHour: number;
-  valuePerMinute: number;
-  netValue: number;
-  fuelCost: number;
-  signal: "green" | "yellow" | "red";
-  score: number;
-}
+// ─── Pure helpers (exported for use in screens) ───────────────────────────────
 
 export function analyzeTripQuality(
-  grossValue: number,
-  distanceKm: number,
+  grossValue:      number,
+  distanceKm:      number,
   durationMinutes: number,
-  settings: Settings
+  settings:        AppSettings
 ): TripAnalysis {
-  const fuelCost = (distanceKm / settings.kmPerLiter) * settings.fuelPricePerLiter;
-  const extraCost = distanceKm * settings.costPerKmExtra;
-  const netValue = grossValue - fuelCost - extraCost;
+  const fuelCost     = (distanceKm / settings.kmPerLiter) * settings.fuelPricePerLiter;
+  const extraCost    = distanceKm * settings.costPerKmExtra;
+  const netValue     = grossValue - fuelCost - extraCost;
 
-  const valuePerKm = distanceKm > 0 ? netValue / distanceKm : 0;
+  const valuePerKm     = distanceKm      > 0 ? netValue / distanceKm      : 0;
   const valuePerMinute = durationMinutes > 0 ? netValue / durationMinutes : 0;
-  const valuePerHour = valuePerMinute * 60;
+  const valuePerHour   = valuePerMinute * 60;
 
-  const kmGood = valuePerKm >= settings.minGoodValuePerKm;
-  const kmOk = valuePerKm >= settings.minGoodValuePerKm * 0.6;
-  const minGood = valuePerMinute >= settings.minGoodValuePerMinute;
-  const minOk = valuePerMinute >= settings.minGoodValuePerMinute * 0.6;
-  const hourGood = valuePerHour >= settings.minGoodValuePerHour;
-  const hourOk = valuePerHour >= settings.minGoodValuePerHour * 0.6;
+  const kmGood   = valuePerKm     >= settings.minGoodValuePerKm;
+  const kmOk     = valuePerKm     >= settings.minGoodValuePerKm     * 0.6;
+  const minGood  = valuePerMinute >= settings.minGoodValuePerMinute;
+  const minOk    = valuePerMinute >= settings.minGoodValuePerMinute  * 0.6;
+  const hourGood = valuePerHour   >= settings.minGoodValuePerHour;
+  const hourOk   = valuePerHour   >= settings.minGoodValuePerHour    * 0.6;
 
   let score = 0;
-  if (kmGood) score += 34;
-  else if (kmOk) score += 17;
-  if (minGood) score += 33;
-  else if (minOk) score += 16;
-  if (hourGood) score += 33;
-  else if (hourOk) score += 16;
+  if (kmGood)   score += 34; else if (kmOk)   score += 17;
+  if (minGood)  score += 33; else if (minOk)  score += 16;
+  if (hourGood) score += 33; else if (hourOk) score += 16;
 
   const signal: "green" | "yellow" | "red" =
     score >= 70 ? "green" : score >= 40 ? "yellow" : "red";
@@ -180,65 +193,79 @@ export function analyzeTripQuality(
   return { valuePerKm, valuePerHour, valuePerMinute, netValue, fuelCost, signal, score };
 }
 
-// Substitua a função parseUberText no contexts/AppContext.tsx por esta versão:
-
 export function parseUberText(text: string): {
-  grossValue: number;
-  distanceKm: number;
+  grossValue:      number;
+  distanceKm:      number;
   durationMinutes: number;
   passengerRating: number;
 } | null {
   if (!text || text.length < 3) return null;
 
-  // ── 1. Valor ────────────────────────────────────────────────────────────
-  const moneyMatch = /R\$\s*(\d{1,4}[.,]\d{1,2})/i.exec(text);
-  const grossValue = moneyMatch
-    ? parseFloat(moneyMatch[1].replace(",", "."))
-    : null;
-  if (!grossValue || grossValue < 3 || grossValue > 2000) return null;
-
-  // ── 2. Somar busca + corrida ─────────────────────────────────────────────
-  // Formato Uber: "4 min (1.2 km)" + "10 minutos (3.9 km)"
-  const timeDistPattern = /(\d+)\s*min(?:uto(?:s)?)?\s*\((\d+[.,]\d+|\d+)\s*km\)/gi;
-  const allMatches = [...text.matchAll(timeDistPattern)];
-
-  let durationMinutes: number | null = null;
-  let distanceKm: number | null = null;
-
-  if (allMatches.length > 0) {
-    // Soma todos os pares encontrados (busca + corrida)
-    durationMinutes = allMatches.reduce((sum, m) => sum + (parseFloat(m[1]) || 0), 0);
-    distanceKm = allMatches.reduce(
-      (sum, m) => sum + (parseFloat(m[2].replace(",", ".")) || 0),
-      0
-    );
-  } else {
-    // Fallback: pegar primeiro min e primeiro km separados
-    const minMatch = /(\d+)\s*min/i.exec(text);
-    const kmMatch = /(\d+[.,]\d+|\d+)\s*km/i.exec(text);
-    durationMinutes = minMatch ? parseFloat(minMatch[1]) : null;
-    distanceKm = kmMatch ? parseFloat(kmMatch[1].replace(",", ".")) : null;
-  }
-
-  if (!durationMinutes || !distanceKm) return null;
-  if (durationMinutes <= 0 || distanceKm <= 0) return null;
-
-  // ── 3. Rating ────────────────────────────────────────────────────────────
-  // "★ 4,89 (261)" ou "4,89 ★" ou "4,89 (261)"
-  const ratingPatterns = [
-    /[★⭐*]\s*(\d[.,]\d{1,2})/,
-    /(\d[.,]\d{1,2})\s*[★⭐*]/,
-    /(\d[.,]\d{1,2})\s*\(\d+\)/,
-    /nota[:\s]+(\d[.,]\d{1,2})/i,
+  // ── money ──────────────────────────────────────────────────────────────────
+  const moneyPatterns = [
+    /R\$\s*(\d+[.,]\d{1,2})/gi,
+    /(\d+[.,]\d{2})\s*reais/gi,
+    /valor[\s:]+R?\$?\s*(\d+[.,]\d{1,2})/gi,
   ];
-  let passengerRating = 0;
-  for (const p of ratingPatterns) {
-    const m = p.exec(text);
-    if (m) {
-      const v = parseFloat(m[1].replace(",", "."));
-      if (v >= 1 && v <= 5) { passengerRating = v; break; }
-    }
+
+  // ── distance ───────────────────────────────────────────────────────────────
+  // Coleta TODOS os pares tempo+distância (busca + corrida) e soma
+  const pairPattern = /(\d+)\s*min(?:uto(?:s)?)?\s*\((\d+[.,]\d+|\d+)\s*km\)/gi;
+  let totalDist = 0;
+  let totalDur  = 0;
+  let pairMatch: RegExpExecArray | null;
+  while ((pairMatch = pairPattern.exec(text)) !== null) {
+    totalDur  += parseFloat(pairMatch[1]);
+    totalDist += parseFloat(pairMatch[2].replace(",", "."));
   }
+
+  // fallback individual se não encontrou pares
+  if (totalDist === 0) {
+    const distPatterns = [
+      /(\d+[.,]\d{1,2})\s*km/gi,
+      /(\d+)\s*km/gi,
+    ];
+    totalDist = findFirst(text, distPatterns) ?? 0;
+  }
+  if (totalDur === 0) {
+    const timePatterns = [
+      /(\d+)\s*min(?:uto(?:s)?)?/gi,
+      /(\d+)\s*h(?:ora(?:s)?)?\s*(\d+)\s*min/gi,
+    ];
+    totalDur = findFirst(text, timePatterns) ?? 0;
+  }
+
+  // ── rating ─────────────────────────────────────────────────────────────────
+  const ratingPatterns = [
+    /★\s*(\d[.,]\d{1,2})/gi,
+    /(\d[.,]\d{1,2})\s*★/gi,
+    /(\d[.,]\d{1,2})\s*\(\d+\)/gi,
+    /(\d[.,]\d{1,2})\s*[*⭐]/gi,
+    /nota[\s:]+(  \d[.,]\d{1,2})/gi,
+    /avalia[çc][aã]o[\s:]+(\d[.,]\d{1,2})/gi,
+  ];
+
+  const grossValue      = findFirst(text, moneyPatterns);
+  const distanceKm      = totalDist > 0 ? totalDist : null;
+  const durationMinutes = totalDur  > 0 ? totalDur  : null;
+  const passengerRating = findFirst(text, ratingPatterns) ?? 0;
+
+  if (!grossValue || !distanceKm || !durationMinutes) return null;
+  if (grossValue <= 0 || distanceKm <= 0 || durationMinutes <= 0) return null;
 
   return { grossValue, distanceKm, durationMinutes, passengerRating };
+}
+
+// ─── Internal helper ─────────────────────────────────────────────────────────
+
+function findFirst(text: string, patterns: RegExp[]): number | null {
+  for (const p of patterns) {
+    p.lastIndex = 0;
+    const m = p.exec(text);
+    if (m) {
+      const v = parseFloat((m[1] ?? "0").replace(",", "."));
+      if (v > 0) return v;
+    }
+  }
+  return null;
 }
