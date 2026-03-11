@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.text.TextUtils
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
@@ -16,6 +17,7 @@ class TripReaderModule(private val reactContext: ReactApplicationContext)
 
     override fun initialize() {
         super.initialize()
+
         TripReaderService.onTripDetected = { trip ->
             val fuelCostPerKm = 0.50
             val netValue      = trip.grossValue - (trip.distanceKm * fuelCostPerKm)
@@ -30,55 +32,54 @@ class TripReaderModule(private val reactContext: ReactApplicationContext)
             if (valuePerHour >= minHour) score += 33 else if (valuePerHour >= minHour * 0.6) score += 16
             val signal = when { score >= 70 -> "green"; score >= 40 -> "yellow"; else -> "red" }
 
-            // Mostrar overlay nativo sobre outros apps
-            val ctx = reactContext.applicationContext
-            val canOverlay = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-                             Settings.canDrawOverlays(ctx)
-            if (canOverlay) {
-                Handler(Looper.getMainLooper()).post {
-                    OverlayService.show(ctx, OverlayData(
-                        gross   = trip.grossValue,
-                        dist    = trip.distanceKm,
-                        dur     = trip.durationMinutes,
-                        rating  = trip.passengerRating,
-                        signal  = signal,
-                        score   = score,
-                        perKm   = valuePerKm,
-                        perHour = valuePerHour,
-                        perMin  = valuePerMin,
-                        net     = netValue,
-                    ))
+            Handler(Looper.getMainLooper()).post {
+                if (reactContext.hasActiveReactInstance()) {
+                    val params = Arguments.createMap().apply {
+                        putDouble("grossValue",      trip.grossValue)
+                        putDouble("distanceKm",      trip.distanceKm)
+                        putDouble("durationMinutes", trip.durationMinutes)
+                        putDouble("passengerRating", trip.passengerRating)
+                        putDouble("netValue",        netValue)
+                        putDouble("valuePerKm",      valuePerKm)
+                        putDouble("valuePerHour",    valuePerHour)
+                        putDouble("valuePerMinute",  valuePerMin)
+                        putString("signal",          signal)
+                        putInt("score",              score)
+                    }
+                    reactContext
+                        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                        .emit("TripReaderDetected", params)
                 }
             }
-
-            // Emitir evento para o React Native (quando app estiver em foreground)
-            val params = Arguments.createMap().apply {
-                putDouble("grossValue",      trip.grossValue)
-                putDouble("distanceKm",      trip.distanceKm)
-                putDouble("durationMinutes", trip.durationMinutes)
-                putDouble("passengerRating", trip.passengerRating)
-                putDouble("netValue",        netValue)
-                putDouble("valuePerKm",      valuePerKm)
-                putDouble("valuePerHour",    valuePerHour)
-                putDouble("valuePerMinute",  valuePerMin)
-                putString("signal",          signal)
-                putInt("score",              score)
-            }
-            reactContext
-                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-                .emit("TripReaderDetected", params)
         }
     }
 
-    @ReactMethod fun isAvailable(promise: Promise)             { promise.resolve(true) }
-    @ReactMethod fun startListening(promise: Promise)          { promise.resolve(null) }
-    @ReactMethod fun stopListening(promise: Promise)           { promise.resolve(null) }
-    @ReactMethod fun addListener(eventName: String)            {}
-    @ReactMethod fun removeListeners(count: Int)               {}
+    @ReactMethod fun isAvailable(promise: Promise)    { promise.resolve(true) }
+    @ReactMethod fun startListening(promise: Promise) { promise.resolve(null) }
+    @ReactMethod fun stopListening(promise: Promise)  { promise.resolve(null) }
+    @ReactMethod fun addListener(eventName: String)   {}
+    @ReactMethod fun removeListeners(count: Int)      {}
 
     @ReactMethod
     fun isAccessibilityEnabled(promise: Promise) {
-        promise.resolve(TripReaderService.isRunning)
+        try {
+            val fqn = "${reactContext.packageName}/${TripReaderService::class.java.canonicalName}"
+            val enabled = Settings.Secure.getString(
+                reactContext.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: ""
+            val splitter = TextUtils.SimpleStringSplitter(':')
+            splitter.setString(enabled)
+            while (splitter.hasNext()) {
+                if (splitter.next().equals(fqn, ignoreCase = true)) {
+                    promise.resolve(true)
+                    return
+                }
+            }
+            promise.resolve(false)
+        } catch (e: Exception) {
+            promise.resolve(false)
+        }
     }
 
     @ReactMethod
